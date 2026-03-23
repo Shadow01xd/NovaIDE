@@ -1,0 +1,724 @@
+/* src/renderer/styles/file-manager.css */
+/**
+ * Estilos para el componente FileManager
+ * Estilo oscuro similar a VS Code
+ */
+
+/* ── Contenedor principal ─────────────────────────────────────────────────── */
+.file-manager {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg2);
+  color: var(--text0);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ── Contenedor del FileManager (dentro del sidebar) ──────────────────────── */
+.fm-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ── Contenedor del árbol ─────────────────────────────────────────────────── */
+.fm-tree-container {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--bg2);
+  min-height: 0;
+  max-height: 100%;
+  height: 0; /* Forzar a calcular basado en flex */
+}
+
+.fm-tree-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.fm-tree-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.fm-tree-container::-webkit-scrollbar-thumb {
+  background: var(--bg4);
+  border-radius: 4px;
+}
+
+.fm-tree-container::-webkit-scrollbar-thumb:hover {
+  background: #484f58;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.fm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--bg4);
+  background: var(--bg1);
+  flex-shrink: 0;
+  min-height: 35px;
+  height: fit-content;
+}
+
+.fm-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--text1);
+  text-transform: uppercase;
+}
+
+.fm-icon {
+  font-size: 14px;
+}
+
+.fm-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.fm-btn {
+  width: 24px;
+  height: 24px;
+  background: none;
+  border: none;
+  color: var(--text2);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.fm-btn:hover {
+  color: var(--text0);
+  background: var(--bg3);
+}
+
+.fm-btn:active {
+  transform: scale(0.95);
+}
+
+.fm-btn-primary {
+  background: var(--accent);
+  color: #000;
+  padding: 4px 12px;
+  width: auto;
+  height: auto;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: var(--r);
+  transition: opacity 0.15s ease;
+}
+
+.fm-btn-primary:hover {
+  opacity: 0.85;
+}
+
+/* ── Breadcrumb ─────────────────────────────────────────────────────────── */
+.fm-breadcrumb {
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--bg4);
+  background: var(--bg2);
+  flex-shrink: 0;
+  height: fit-content;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+}
+
+.fm-path {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text1);
+  overflow-x: auto;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.fm-path-part {
+  color: var(--text2);
+  cursor: pointer;
+  transition: color 0.15s ease;
+  border-radius: 2px;
+  padding: 1px 3px;
+}
+
+.fm-path-part:hover {
+  color: var(--text0);
+  background: var(--bg3);
+}
+
+.fm-path-separator {
+  color: var(--text2);
+  margin: 0 4px;
+  font-size: 10px;
+}
+
+/* ── Contenedor del árbol ─────────────────────────────────────────────────── */
+.fm-tree-container {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--bg2);
+}
+
+.fm-tree-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.fm-tree-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.fm-tree-container::-webkit-scrollbar-thumb {
+  background: var(--bg4);
+  border-radius: 3px;
+}
+
+.fm-tree-container::-webkit-scrollbar-thumb:hover {
+  background: #484f58;
+}
+
+/* ── Estados vacíos ─────────────────────────────────────────────────────── */
+.fm-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text1);
+}
+
+.fm-empty-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  opacity: 0.6;
+}
+
+.fm-empty-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text0);
+  margin-bottom: 4px;
+}
+
+.fm-empty-sub {
+  font-size: 12px;
+  color: var(--text2);
+  margin-bottom: 16px;
+}
+
+/* ── Estados de carga/error ───────────────────────────────────────────────── */
+.fm-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  color: var(--text2);
+  font-size: 12px;
+}
+
+.fm-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 20px;
+  text-align: center;
+}
+
+.fm-error-icon {
+  font-size: 32px;
+  margin-bottom: 8px;
+}
+
+.fm-error-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--red);
+  margin-bottom: 4px;
+}
+
+.fm-error-message {
+  font-size: 12px;
+  color: var(--text2);
+}
+
+/* ── Árbol de archivos ───────────────────────────────────────────────────── */
+.fm-tree {
+  padding: 4px 0;
+  min-height: fit-content;
+}
+
+.fm-tree-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  white-space: nowrap;
+  transition: background-color 0.15s ease;
+}
+
+.fm-tree-item:hover {
+  background: var(--bg3);
+}
+
+.fm-tree-item.fm-selected {
+  background: #1f6feb22;
+}
+
+.fm-tree-item.fm-active {
+  background: #1f6feb33;
+  color: var(--accent);
+}
+
+/* ── Flechas de carpetas ─────────────────────────────────────────────────── */
+.fm-arrow {
+  width: 12px;
+  font-size: 9px;
+  color: var(--text2);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.fm-arrow[style*="rotate(90deg)"] {
+  transform: rotate(90deg);
+}
+
+/* ── Iconos ─────────────────────────────────────────────────────────────── */
+.fm-tree-item .fm-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+}
+
+/* ── Labels ─────────────────────────────────────────────────────────────── */
+.fm-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  line-height: 1;
+  min-width: 0;
+}
+
+/* ── Hijos de carpetas ───────────────────────────────────────────────────── */
+.fm-children {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Edición inline ───────────────────────────────────────────────────────── */
+.fm-edit-input {
+  background: var(--bg1);
+  border: 1px solid var(--accent);
+  color: var(--text0);
+  border-radius: 2px;
+  padding: 1px 4px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  outline: none;
+  width: 100%;
+  min-width: 100px;
+}
+
+.fm-edit-input:focus {
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* ── Menú contextual ───────────────────────────────────────────────────────── */
+.fm-context-menu {
+  position: fixed;
+  z-index: 9999;
+  background: var(--bg2);
+  border: 1px solid var(--bg4);
+  border-radius: var(--r);
+  padding: 4px;
+  min-width: 180px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  font-size: 12px;
+  animation: fmFadeIn 0.15s ease-out;
+}
+
+@keyframes fmFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fm-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  transition: background-color 0.15s ease;
+  color: var(--text0);
+}
+
+.fm-menu-item:hover {
+  background: var(--bg3);
+}
+
+.fm-menu-icon {
+  font-size: 14px;
+  width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.fm-menu-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.fm-menu-shortcut {
+  color: var(--text2);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  margin-left: auto;
+}
+
+.fm-separator {
+  height: 1px;
+  background: var(--bg4);
+  margin: 4px 0;
+}
+
+/* ── Modal para crear archivos/carpetas ───────────────────────────────────── */
+.fm-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  animation: fmModalFadeIn 0.2s ease-out;
+}
+
+@keyframes fmModalFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.fm-modal {
+  background: var(--bg2);
+  border: 1px solid var(--bg4);
+  border-radius: var(--r);
+  padding: 20px;
+  min-width: 300px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  animation: fmModalSlideIn 0.2s ease-out;
+}
+
+@keyframes fmModalSlideIn {
+  from {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.fm-modal-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text0);
+  margin-bottom: 12px;
+}
+
+.fm-modal-input {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--bg4);
+  color: var(--text0);
+  border-radius: var(--r-sm);
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  margin-bottom: 16px;
+  outline: none;
+}
+
+.fm-modal-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.fm-modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.fm-btn-cancel {
+  background: var(--bg3);
+  border: 1px solid var(--bg4);
+  color: var(--text1);
+  padding: 6px 12px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s ease;
+}
+
+.fm-btn-cancel:hover {
+  background: var(--bg4);
+  color: var(--text0);
+}
+
+/* ── Toast notifications ───────────────────────────────────────────────────── */
+.fm-toast {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--bg2);
+  border: 1px solid var(--bg4);
+  color: var(--text0);
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 12px;
+  z-index: 99999;
+  opacity: 0;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  white-space: nowrap;
+}
+
+.fm-toast.fm-toast-show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.fm-toast-success {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.fm-toast-error {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.fm-toast-warning {
+  border-color: var(--orange);
+  color: var(--orange);
+}
+
+.fm-toast-info {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .fm-header {
+    padding: 6px 8px;
+  }
+  
+  .fm-title {
+    font-size: 10px;
+  }
+  
+  .fm-actions {
+    gap: 1px;
+  }
+  
+  .fm-btn {
+    width: 20px;
+    height: 20px;
+  }
+  
+  .fm-tree-item {
+    height: 24px;
+  }
+  
+  .fm-label {
+    font-size: 12px;
+  }
+}
+
+/* ─── Tema claro (opcional) ───────────────────────────────────────────────── */
+@media (prefers-color-scheme: light) {
+  .file-manager {
+    background: #f3f3f3;
+    color: #333;
+  }
+  
+  .fm-header {
+    background: #fff;
+    border-bottom-color: #e1e1e1;
+  }
+  
+  .fm-title {
+    color: #666;
+  }
+  
+  .fm-btn {
+    color: #666;
+  }
+  
+  .fm-btn:hover {
+    background: #f0f0f0;
+    color: #333;
+  }
+  
+  .fm-tree-container {
+    background: #f8f8f8;
+  }
+  
+  .fm-tree-item:hover {
+    background: #e8e8e8;
+  }
+  
+  .fm-tree-item.fm-selected {
+    background: #0078d422;
+  }
+  
+  .fm-tree-item.fm-active {
+    background: #0078d433;
+    color: #0078d4;
+  }
+  
+  .fm-context-menu {
+    background: #fff;
+    border-color: #e1e1e1;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  }
+  
+  .fm-menu-item:hover {
+    background: #f0f0f0;
+  }
+  
+  .fm-modal {
+    background: #fff;
+    border-color: #e1e1e1;
+  }
+  
+  .fm-modal-input {
+    background: #f8f8f8;
+    border-color: #e1e1e1;
+    color: #333;
+  }
+  
+  .fm-edit-input {
+    background: #fff;
+    border-color: #0078d4;
+    color: #333;
+  }
+}
+
+/* ─── Animaciones adicionales ───────────────────────────────────────────────── */
+.fm-tree-item {
+  transition: all 0.15s ease;
+}
+
+.fm-arrow {
+  transition: transform 0.2s ease;
+}
+
+.fm-context-menu {
+  animation: fmContextMenuShow 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes fmContextMenuShow {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) translateY(-10px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* ─── Focus states ───────────────────────────────────────────────────────── */
+.fm-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.fm-menu-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.fm-modal-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ─── Estados de carga ─────────────────────────────────────────────────────── */
+.fm-loading::after {
+  content: '';
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-left: 8px;
+  border: 2px solid var(--bg4);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: fmSpin 0.8s linear infinite;
+}
+
+@keyframes fmSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ─── Scrollbar personalizado ───────────────────────────────────────────────── */
+.fm-path::-webkit-scrollbar {
+  height: 3px;
+}
+
+.fm-path::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.fm-path::-webkit-scrollbar-thumb {
+  background: var(--bg4);
+  border-radius: 2px;
+}
+
+.fm-path::-webkit-scrollbar-thumb:hover {
+  background: #484f58;
+}

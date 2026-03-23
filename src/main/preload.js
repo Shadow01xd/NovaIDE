@@ -1,0 +1,88 @@
+// src/main/preload.js
+const { contextBridge, ipcRenderer } = require('electron')
+
+contextBridge.exposeInMainWorld('api', {
+  // Path utilities (via IPC handlers)
+  pathJoin: (...args) => ipcRenderer.invoke('path:join', ...args),
+  pathIsAbsolute: (p) => ipcRenderer.invoke('path:isAbsolute', p),
+  pathDirname: (p) => ipcRenderer.invoke('path:dirname', p),
+  pathBasename: (p) => ipcRenderer.invoke('path:basename', p),
+  // File system
+  openFolder:    ()        => ipcRenderer.invoke('dialog:openFolder'),
+  saveAs:        (p)       => ipcRenderer.invoke('dialog:saveAs', p),
+  readDir:       (p)       => ipcRenderer.invoke('fs:readDir', p),
+  readDirSub:    (p)       => ipcRenderer.invoke('fs:readDirSub', p),
+  readFile:      (p)       => ipcRenderer.invoke('fs:readFile', p),
+  saveFile:      (p, c)    => ipcRenderer.invoke('fs:saveFile', p, c),
+  deleteFile:    (p)       => ipcRenderer.invoke('fs:deleteFile', p),
+  rename:        (o, n)    => ipcRenderer.invoke('fs:rename', o, n),
+  createFile:    (p)       => ipcRenderer.invoke('fs:createFile', p),
+  createDir:     (p)       => ipcRenderer.invoke('fs:createDir', p),
+  exists:        (p)       => ipcRenderer.invoke('fs:exists', p),
+  openInShell:   (p)       => ipcRenderer.invoke('shell:open', p),
+
+  // AI
+  aiModels: ()             => ipcRenderer.invoke('ai:models'),
+  aiChat:   (msgs, model)  => ipcRenderer.invoke('ai:chat', { messages: msgs, model }),
+  aiStream: (msgs, model, reqId) => ipcRenderer.invoke('ai:stream', { messages: msgs, model, reqId }),
+  onAiToken: (fn)          => {
+    const wrapped = (_, d) => fn(d)
+    ipcRenderer.on('ai:token', wrapped)
+    return () => ipcRenderer.removeListener('ai:token', wrapped)
+  },
+
+  // Terminal
+  termCreate: (id, cwd)    => ipcRenderer.invoke('terminal:create', { id, cwd }),
+  termWrite:  (id, data)   => ipcRenderer.send('terminal:write', { id, data }),
+  termResize: (id, c, r)   => ipcRenderer.send('terminal:resize', { id, cols: c, rows: r }),
+  termKill:   (id)         => ipcRenderer.invoke('terminal:kill', id),
+  onTermData: (fn)         => {
+    const w = (_, d) => fn(d)
+    ipcRenderer.on('terminal:data', w)
+    return () => ipcRenderer.removeListener('terminal:data', w)
+  },
+  onTermExit: (fn)         => {
+    const w = (_, d) => fn(d)
+    ipcRenderer.on('terminal:exit', w)
+    return () => ipcRenderer.removeListener('terminal:exit', w)
+  },
+
+  // Menu events
+  onMenu: (fn) => {
+    const events = ['openFolder','newFile','save','saveAs','toggleTerminal','toggleAI','toggleExtensions','toggleSearch']
+    const listeners = events.map(e => {
+      const w = () => fn(e)
+      ipcRenderer.on(`menu:${e}`, w)
+      return [e, w]
+    })
+    return () => listeners.forEach(([e, w]) => ipcRenderer.removeListener(`menu:${e}`, w))
+  },
+
+  // Settings
+  getSettings: ()    => ipcRenderer.invoke('settings:get'),
+  setSettings: (d)   => ipcRenderer.invoke('settings:set', d),
+
+  // AI Agent Tools (consolidated - use these instead of fs:* for agent operations)
+  agentReadFile:   (p)       => ipcRenderer.invoke('agent:readFile', p),
+  agentWriteFile:  (p, c)    => ipcRenderer.invoke('agent:writeFile', p, c),
+  agentCreateFile: (p, c)    => ipcRenderer.invoke('agent:createFile', p, c),
+  agentDeleteFile: (p)       => ipcRenderer.invoke('agent:deleteFile', p),
+  agentListFiles:  (p)       => ipcRenderer.invoke('agent:listFiles', p),
+  agentSearch:     (q, d)    => ipcRenderer.invoke('agent:searchInFiles', q, d),
+  
+  // DeepSeek streaming
+  aiStreamDeepSeek: (msgs, model, apiKey, reqId) => 
+    ipcRenderer.invoke('ai:streamDeepSeek', { messages: msgs, model, apiKey, reqId }),
+  
+  // Groq streaming
+  aiStreamGroq: (msgs, model, apiKey, reqId) => 
+    ipcRenderer.invoke('ai:streamGroq', { messages: msgs, model, apiKey, reqId }),
+
+  // Extension Store API
+  installExtension: (namespace, name, version) => 
+    ipcRenderer.invoke('extensions:install', { namespace, name, version }),
+  uninstallExtension: (namespace, name) => 
+    ipcRenderer.invoke('extensions:uninstall', { namespace, name }),
+  getInstalledExtensions: () => 
+    ipcRenderer.invoke('extensions:getInstalled'),
+})
