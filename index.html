@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>MyIDE</title>
+
+  <!-- Monaco Editor CSS -->
+  <link rel="stylesheet" data-name="vs/editor/editor.main"
+    href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/editor/editor.main.min.css"/>
+
+  <!-- xterm.js CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/xterm@5.3.0/css/xterm.css"/>
+
+  <!-- highlight.js for code syntax highlighting -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+  <link rel="stylesheet" href="/src/renderer/styles/main.css"/>
+  <link rel="stylesheet" href="/src/renderer/styles/file-manager.css"/>
+</head>
+<body>
+<div id="app"></div>
+
+<!-- xterm.js core -->
+<script src="https://unpkg.com/xterm@5.3.0/lib/xterm.js"></script>
+<!-- xterm FitAddon — expone window.FitAddon -->
+<script src="https://unpkg.com/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+
+<!-- Monaco loader -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+<script>
+  require.config({
+    paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' }
+  })
+  window.monacoReady = new Promise(resolve => require(['vs/editor/editor.main'], resolve))
+</script>
+
+<script type="module" src="/src/renderer/main.js"></script>
+</body>
+</html>
