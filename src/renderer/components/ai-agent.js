@@ -799,21 +799,18 @@ export class AIAgent {
           }
         });
       } else if (this.provider === 'groq') {
-        try {
-          await window.api.aiStreamGroq(fullMessages, this.activeModel, this.groqApiKey, reqId);
-        } catch (err) {
-          // Fallback: intentar streaming directo si el IPC no está disponible
-          await this.streamGroq(fullMessages, reqId, (token, done) => {
-            fullResponse += token;
-            this.updateStreamingMessage(msgEl, fullResponse);
-            
-            // Detectar posibles tool calls
-            const toolCall = this.parseToolCall(fullResponse);
-            if (toolCall && !toolCalls.find(t => t.json === JSON.stringify(toolCall))) {
-              toolCalls.push({ json: JSON.stringify(toolCall), data: toolCall, executed: false });
-            }
-          });
-        }
+        // Usar streaming directo en renderer para asegurar que
+        // cada token actualice la UI en tiempo real.
+        await this.streamGroq(fullMessages, reqId, (token, done) => {
+          fullResponse += token;
+          this.updateStreamingMessage(msgEl, fullResponse);
+          
+          // Detectar posibles tool calls
+          const toolCall = this.parseToolCall(fullResponse);
+          if (toolCall && !toolCalls.find(t => t.json === JSON.stringify(toolCall))) {
+            toolCalls.push({ json: JSON.stringify(toolCall), data: toolCall, executed: false });
+          }
+        });
       } else {
         await this.streamDeepSeek(fullMessages, reqId, (token, done) => {
           fullResponse += token;
