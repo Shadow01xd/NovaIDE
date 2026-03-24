@@ -30,15 +30,18 @@ export class DragAndDropManager {
 
     document.body.addEventListener('drop', async (e) => {
       e.preventDefault();
+      console.log('[DragDrop] Drop event detected', e);
       dragCounter = 0;
       document.body.classList.remove('is-dragging');
       this.clearHighlights();
 
       const targetZone = this.determineDropZone(e.clientX, e.clientY);
+      console.log('[DragDrop] Target zone determined:', targetZone);
       if (!targetZone) return;
 
       // 1. Verificar si viene del explorador interno (Custom Drag)
       const internalData = e.dataTransfer.getData('application/nvcode-file');
+      console.log('[DragDrop] Internal data:', internalData);
       if (internalData) {
         try {
           const item = JSON.parse(internalData);
@@ -47,9 +50,29 @@ export class DragAndDropManager {
           const mockFile = {
             path: item.path,
             name: item.name,
-            text: async () => window.api.readFile(item.path)
+            text: async () => {
+              try {
+                console.log('[DragDrop] Attempting to read file:', item.path);
+                // Verificar si el archivo existe primero
+                const exists = await window.api.exists(item.path);
+                console.log('[DragDrop] File exists:', exists);
+                
+                if (!exists) {
+                  console.error('[DragDrop] File does not exist:', item.path);
+                  return '';
+                }
+                
+                const content = await window.api.readFile(item.path);
+                console.log('[DragDrop] Internal file content read:', content.length, 'bytes');
+                return content;
+              } catch (err) {
+                console.error('[DragDrop] Error reading internal file:', err);
+                return '';
+              }
+            }
           };
           
+          console.log('[DragDrop] Handling internal file drop:', mockFile);
           await this.handleFileDrop(mockFile, targetZone);
         } catch(err) {
           console.error("Error parseando archivo interno", err);
@@ -59,9 +82,11 @@ export class DragAndDropManager {
 
       // 2. Verificar archivos nativos de SO
       const files = Array.from(e.dataTransfer.files);
+      console.log('[DragDrop] Native files:', files);
       if (!files.length) return;
 
       for (const file of files) {
+        console.log('[DragDrop] Handling native file drop:', file);
         await this.handleFileDrop(file, targetZone);
       }
     });
@@ -103,29 +128,73 @@ export class DragAndDropManager {
   }
 
   async handleFileDrop(file, targetZone) {
+    console.log('[DragDrop] handleFileDrop called with:', { file: file.name, targetZone });
     const filePath = file.path; // API de Electron Files
     const fileName = file.name;
     let content = '';
     
-    // Si no somos el explorer, quizas necesitamos el contenido textual
+    // Si no somos el explorer, necesitamos el contenido textual
     if (targetZone === 'chat' || targetZone === 'editor') {
       try {
+        console.log('[DragDrop] Reading file content...');
         content = await file.text();
+        console.log('[DragDrop] File content read successfully, length:', content.length);
+        if (!content || content.trim() === '') {
+          console.warn('[DragDrop] File content is empty, trying to read directly...');
+          // Fallback: leer directamente con API si es archivo interno
+          if (filePath) {
+            try {
+              console.log('[DragDrop] Fallback: attempting to read file directly:', filePath);
+              const exists = await window.api.exists(filePath);
+              console.log('[DragDrop] Fallback: file exists:', exists);
+              
+              if (!exists) {
+                console.error('[DragDrop] Fallback: file does not exist:', filePath);
+                // Mostrar error al usuario
+                alert(`No se puede encontrar el archivo: ${filePath}\nAsegúrate de que el archivo esté dentro del workspace del IDE.`);
+                return;
+              }
+              
+              content = await window.api.readFile(filePath);
+              console.log('[DragDrop] Fallback content read, length:', content.length);
+              
+              if (!content || content.trim() === '') {
+                console.warn('[DragDrop] Fallback: content still empty after direct read');
+                alert(`El archivo ${fileName} está vacío o no se puede leer como texto.`);
+                return;
+              }
+            } catch (fallbackErr) {
+              console.error('[DragDrop] Fallback read failed:', fallbackErr);
+              alert(`Error al leer el archivo: ${fallbackErr.message}`);
+              return;
+            }
+          }
+        }
       } catch (err) {
-        console.warn('El archivo no es texto plano');
+        console.warn('[DragDrop] Error reading file content:', err);
+        // Intentar leer directamente como fallback
+        try {
+          content = await window.api.readFile(filePath);
+          console.log('[DragDrop] Emergency fallback content read, length:', content.length);
+        } catch (fallbackErr) {
+          console.error('[DragDrop] Emergency fallback failed:', fallbackErr);
+        }
       }
     }
 
     try {
       const stat = await window.api.stat(filePath);
+      console.log('[DragDrop] File stat:', stat);
 
       if (targetZone === 'chat') {
+        console.log('[DragDrop] Processing chat drop...');
         if (stat.isDirectory) {
           alert('No puedes adjuntar carpetas directamente al chat mediante Drop. Usa el comando @Proyecto');
           return;
         }
         // Emitir al chat
         const lang = fileName.split('.').pop() || 'text';
+        console.log('[DragDrop] Emitting sendToAI event:', { code: content, file: fileName, lang, selection: null });
         this.state.emit('sendToAI', { code: content, file: fileName, lang, selection: null });
         
       } else if (targetZone === 'editor') {

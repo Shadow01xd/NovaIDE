@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('api', {
   aiModels: ()             => ipcRenderer.invoke('ai:models'),
   aiChat:   (msgs, model)  => ipcRenderer.invoke('ai:chat', { messages: msgs, model }),
   aiStream: (msgs, model, reqId) => ipcRenderer.invoke('ai:stream', { messages: msgs, model, reqId }),
+  aiInlineComplete: (payload) => ipcRenderer.invoke('ai:inlineComplete', payload),
   onAiToken: (fn)          => {
     const wrapped = (_, d) => fn(d)
     ipcRenderer.on('ai:token', wrapped)
@@ -80,11 +81,11 @@ contextBridge.exposeInMainWorld('api', {
   aiStreamGroq: (msgs, model, apiKey, reqId) => 
     ipcRenderer.invoke('ai:streamGroq', { messages: msgs, model, apiKey, reqId }),
 
-  // Extension Store API (Marketplace)
-  marketplaceSearch: (query) => ipcRenderer.invoke('marketplace:search', query),
-  marketplaceDetails: (publisher, name) => ipcRenderer.invoke('marketplace:details', { publisher, name }),
-  marketplaceInstall: (publisher, name, version) => ipcRenderer.invoke('marketplace:install', { publisher, name, version }),
-  marketplaceUninstall: (publisher, name) => ipcRenderer.invoke('marketplace:uninstall', { publisher, name }),
-  marketplaceInstalled: () => ipcRenderer.invoke('marketplace:installed'),
-  marketplaceCheckUpdates: () => ipcRenderer.invoke('marketplace:check-updates'),
+  // Extension Store API (Marketplace) - Temporarily commented out
+  // marketplaceSearch: (query) => ipcRenderer.invoke('marketplace:search', query),
+  // marketplaceDetails: (publisher, name) => ipcRenderer.invoke('marketplace:details', { publisher, name }),
+  // marketplaceInstall: (publisher, name, version) => ipcRenderer.invoke('marketplace:install', { publisher, name, version }),
+  // marketplaceUninstall: (publisher, name) => ipcRenderer.invoke('marketplace:uninstall', { publisher, name }),
+  // marketplaceInstalled: () => ipcRenderer.invoke('marketplace:installed'),
+  // marketplaceCheckUpdates: () => ipcRenderer.invoke('marketplace:check-updates'),
 })

@@ -80,7 +80,12 @@ export async function createEditor(container, state, themeMgr = null) {
     formatOnType: false,
     renderWhitespace: 'selection',
     occurrencesHighlight: 'multiFile',
-    inlineSuggest: { enabled: true },
+    inlineSuggest: { 
+      enabled: true,
+      showToolbar: 'always',
+      keepOnBlur: true,
+      showOnHover: true
+    },
     'semanticHighlighting.enabled': true,
     padding: { top: 12, bottom: 12 },
     scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8 },
@@ -96,7 +101,76 @@ export async function createEditor(container, state, themeMgr = null) {
   // Guardar instancia global para acceso desde otros componentes
   window.__editorInstance = editor
 
+  // ── Configurar colores para Ghost Text ─────────────────────────────────────
+  // Asegurar que el ghost text sea visible
+  monaco.editor.defineTheme('ghost-text-theme', {
+    base: initialTheme === 'vs-dark' ? 'vs-dark' : 'vs',
+    inherit: true,
+    rules: [],
+    colors: {
+      'editor.inlineSuggest.foreground': '#888888',
+      'editor.inlineSuggest.background': '#2d2d30',
+      'editorGhostText.foreground': '#888888',
+      'editorGhostText.background': '#2d2d30',
+    }
+  })
+  
+  // Aplicar el tema si es dark
+  if (initialTheme === 'vs-dark') {
+    monaco.editor.setTheme('ghost-text-theme')
+  }
+
   // ── Proveedor de autocompletado con IA ────────────────────────────────
+  registerInlineGhostProviders(monaco, state)
+
+  // ── Comandos de prueba para Ghost Text ────────────────────────────────────
+  // Trigger manual con Ctrl+Shift+I para debug
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyI, () => {
+    console.log('[DEBUG] Manual ghost text trigger')
+    editor.trigger('keyboard', 'editor.action.inlineSuggest.trigger', {})
+  })
+
+  // Autocompletado automático como Cursor/Windsurf - MÁS AGRESIVO
+  let triggerTimer = null
+  let currentRequest = null
+
+  editor.onDidChangeModelContent((e) => {
+    if (state.currentFile) state.markDirty(state.currentFile)
+
+    console.log('[editor] Content changed:', e.changes.length, 'changes')
+    
+    // Activar para CUALQUIER typing - ultra permisivo
+    const isTyping = e.changes?.some(ch => 
+      ch.text && ch.rangeLength === 0 && ch.text.length <= 20
+    )
+
+    console.log('[editor] Is typing:', isTyping)
+
+    if (!isTyping) return
+
+    // Cancelar petición anterior si existe
+    if (currentRequest) {
+      currentRequest.cancelled = true
+      currentRequest = null
+    }
+
+    clearTimeout(triggerTimer)
+    triggerTimer = setTimeout(() => {
+      console.log('[editor] Triggering inline completion...')
+      editor.trigger('keyboard', 'editor.action.inlineSuggest.trigger', {})
+    }, 200) // Reducido a 200ms para más rapidez
+  })
+
+  // Aceptar ghost text con Tab
+  editor.addCommand(monaco.KeyCode.Tab, () => {
+    editor.trigger('keyboard', 'editor.action.inlineSuggest.commit', {})
+  })
+
+  // Trigger manual con Ctrl+Espacio (opcional)
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Space, () => {
+    editor.trigger('keyboard', 'editor.action.inlineSuggest.trigger', {})
+  })
+
   // Se activa con Ctrl+Space cuando hay contexto suficiente
   monaco.languages.registerCompletionItemProvider('*', {
     triggerCharacters: ['.', '(', ' '],
@@ -160,6 +234,10 @@ export async function createEditor(container, state, themeMgr = null) {
     editor.focus()
     // Limpiar decoraciones IA al cambiar de archivo
     clearAIDecorations()
+
+    setTimeout(() => {
+      editor.trigger('keyboard', 'editor.action.inlineSuggest.trigger', {})
+    }, 100)
   })
 
   state.on('editorClear', () => {
@@ -558,4 +636,350 @@ function setupTypeScriptAndJSX(monaco) {
   })
 
   console.log('✅ TypeScript/JavaScript con JSX configurado correctamente')
+}
+
+// ── INLINE COMPLETION PROVIDERS (Ghost Text IA) ────────────────────────────
+function registerInlineGhostProviders(monaco, state) {
+  console.log('[Ghost Text] Registering aggressive inline providers...')
+  
+  // === INLINE COMPLETION PROVIDER (Ghost Text IA) ===
+  const inlineLanguages = [
+    'plaintext', 'javascript', 'typescript', 'python', 'go', 'java', 'php',
+    'csharp', 'cpp', 'html', 'css', 'json', 'markdown',
+    'shell', 'sql', 'yaml', 'rust', 'javascriptreact', 'typescriptreact'
+  ]
+
+  let currentRequest = null
+  let lastPosition = null
+  let lastSuggestion = ''
+  let debounceTimer = null
+
+  for (const lang of inlineLanguages) {
+    monaco.languages.registerInlineCompletionsProvider(lang, {
+      provideInlineCompletions: async (model, position, context, token) => {
+        try {
+          // Evitar peticiones duplicadas para la misma posición
+          if (lastPosition && 
+              lastPosition.lineNumber === position.lineNumber && 
+              lastPosition.column === position.column) {
+            if (lastSuggestion) {
+              return {
+                items: [{
+                  insertText: lastSuggestion,
+                  range: new monaco.Range(
+                    position.lineNumber,
+                    position.column,
+                    position.lineNumber,
+                    position.column
+                  ),
+                  command: {
+                    id: 'editor.action.inlineSuggest.commit',
+                    title: 'Accept'
+                  },
+                  isInlineCompletion: true,
+                  kind: monaco.languages.CompletionItemKind.Text,
+                  detail: 'AI Suggestion (cached)'
+                }],
+                dispose() {},
+              }
+            }
+          }
+
+          console.log('[Ghost Text] === AGGRESSIVE AI INLINE COMPLETION ===')
+          console.log('[Ghost Text] Language:', model.getLanguageId())
+          
+          const line = model.getLineContent(position.lineNumber)
+          const beforeCursor = line.slice(0, position.column - 1)
+          
+          console.log('[Ghost Text] Before cursor:', JSON.stringify(beforeCursor))
+
+          // CONDICIONES MÁS PERMISIVAS - Activar con casi cualquier typing
+          const shouldTrigger = 
+            beforeCursor.trim().length >= 1 && // Mínimo 1 caracter
+            !beforeCursor.includes('//') && // No en comentarios
+            !beforeCursor.includes('*') && // No en comentarios de bloque
+            !isInString(model, position) && // No en strings
+            !beforeCursor.match(/^[\s\t]*$/) // No solo whitespace
+
+          if (!shouldTrigger) {
+            console.log('[Ghost Text] Should not trigger, skipping')
+            return { items: [], dispose() {} }
+          }
+
+          // Cancelar petición anterior
+          if (currentRequest) {
+            currentRequest.cancelled = true
+            currentRequest = null
+          }
+
+          if (debounceTimer) {
+            clearTimeout(debounceTimer)
+          }
+
+          // Debounce más corto para mayor agresividad
+          return new Promise((resolve) => {
+            debounceTimer = setTimeout(async () => {
+              try {
+                if (token.isCancellationRequested) {
+                  resolve({ items: [], dispose() {} })
+                  return
+                }
+
+                const totalText = model.getValue()
+                const offset = model.getOffsetAt(position)
+
+                // Contexto ampliado para mejor IA
+                const contextSize = 4000 // Aumentado
+                const prefix = totalText.slice(Math.max(0, offset - contextSize), offset)
+                const suffix = totalText.slice(offset, Math.min(totalText.length, offset + 800))
+
+                const language = model.getLanguageId()
+                const filePath = state.currentFile || ''
+
+                // Contexto extendido - más líneas
+                const currentLineNum = position.lineNumber
+                const startLine = Math.max(1, currentLineNum - 25) // Aumentado
+                const endLine = Math.min(model.getLineCount(), currentLineNum + 15) // Aumentado
+                
+                let extendedContext = ''
+                for (let i = startLine; i <= endLine; i++) {
+                  const lineContent = model.getLineContent(i)
+                  extendedContext += lineContent + '\n'
+                }
+
+                // Obtener API key
+                let apiKey = ''
+                const aiModel = state.aiModel || 'deepseek-chat'
+                if (aiModel.includes('deepseek')) {
+                  apiKey = localStorage.getItem('ide_deepseek_api_key') || ''
+                } else if (aiModel.includes('llama') || aiModel.includes('groq')) {
+                  apiKey = localStorage.getItem('ide_groq_api_key') || ''
+                }
+
+                if (!apiKey) {
+                  console.log('[Ghost Text] No API key, skipping')
+                  resolve({ items: [], dispose() {} })
+                  return
+                }
+
+                // Crear objeto de petición
+                const requestObj = { cancelled: false }
+                currentRequest = requestObj
+
+                console.log('[Ghost Text] Calling AI with extended context...')
+
+                const suggestion = await withTimeout(
+                  window.api.aiInlineComplete({
+                    model: aiModel,
+                    prefix,
+                    suffix,
+                    extendedContext,
+                    language,
+                    filePath,
+                    currentLine: currentLineNum,
+                    beforeCursor,
+                    apiKey,
+                  }),
+                  15000 // 15 segundos para respuestas largas de IA
+                )
+
+                // Verificar si la petición fue cancelada
+                if (requestObj.cancelled) {
+                  console.log('[Ghost Text] Request cancelled')
+                  resolve({ items: [], dispose() {} })
+                  return
+                }
+
+                if (currentRequest === requestObj) {
+                  currentRequest = null
+                }
+
+                if (token.isCancellationRequested) {
+                  console.log('[Ghost Text] Token cancelled')
+                  resolve({ items: [], dispose() {} })
+                  return
+                }
+
+                console.log('[Ghost Text] AI suggestion received:', suggestion?.substring(0, 150))
+
+                if (!suggestion || suggestion.trim().length === 0) {
+                  console.log('[Ghost Text] No suggestion, returning empty')
+                  resolve({ items: [], dispose() {} })
+                  return
+                }
+
+                // Validación más permisiva
+                if (suggestion.length > 1000) {
+                  console.log('[Ghost Text] Suggestion too long, truncating')
+                  // Truncar en lugar de rechazar
+                  const truncated = suggestion.substring(0, 1000)
+                  lastPosition = { ...position }
+                  lastSuggestion = truncated
+                  
+                  resolve({
+                    items: [{
+                      insertText: truncated,
+                      range: new monaco.Range(
+                        position.lineNumber,
+                        position.column,
+                        position.lineNumber,
+                        position.column
+                      ),
+                      command: {
+                        id: 'editor.action.inlineSuggest.commit',
+                        title: 'Accept'
+                      },
+                      isInlineCompletion: true,
+                      kind: monaco.languages.CompletionItemKind.Text,
+                      detail: 'AI Suggestion (truncated)'
+                    }],
+                    dispose() {},
+                  })
+                  return
+                }
+
+                // Sanitización mejorada
+                const cleaned = sanitizeInlineCompletion(suggestion, beforeCursor, language)
+                if (!cleaned || cleaned.trim().length === 0) {
+                  console.log('[Ghost Text] Sanitization returned empty')
+                  resolve({ items: [], dispose() {} })
+                  return
+                }
+
+                // Guardar para caché
+                lastPosition = { ...position }
+                lastSuggestion = cleaned
+
+                console.log('[Ghost Text] Final suggestion:', cleaned.substring(0, 100))
+
+                resolve({
+                  items: [{
+                    insertText: cleaned,
+                    range: new monaco.Range(
+                      position.lineNumber,
+                      position.column,
+                      position.lineNumber,
+                      position.column
+                    ),
+                    command: {
+                      id: 'editor.action.inlineSuggest.commit',
+                      title: 'Accept'
+                    },
+                    isInlineCompletion: true,
+                    kind: monaco.languages.CompletionItemKind.Text,
+                    detail: 'AI Suggestion'
+                  }],
+                  dispose() {},
+                })
+
+              } catch (err) {
+                console.error('[Ghost Text] Error:', err)
+                resolve({ items: [], dispose() {} })
+              }
+            }, 150) // Reducido a 150ms para mayor agresividad
+          })
+
+        } catch (err) {
+          console.error('[Ghost Text] Provider error:', err)
+          return { items: [], dispose() {} }
+        }
+      },
+      
+      freeInlineCompletions() {
+        // Limpiar caché cuando se liberan completions
+        lastPosition = null
+        lastSuggestion = ''
+      },
+    })
+  }
+}
+
+function sanitizeInlineCompletion(suggestion, prefix = '') {
+  if (!suggestion) return ''
+
+  console.log('[editor] sanitizeInlineCompletion input:', suggestion.substring(0, 100))
+
+  // Limpiar sugerencia pero PRESERVAR saltos de línea para HTML
+  let cleaned = suggestion
+    .replace(/^```[\w-]*\n?/gm, '')
+    .replace(/```$/gm, '')
+    .replace(/^`+|`+$/g, '')
+    .trimEnd()
+
+  // Si es HTML, preservar estructura y saltos de línea
+  if (cleaned.includes('<!DOCTYPE') || cleaned.includes('<html')) {
+    console.log('[editor] HTML detected, preserving structure')
+    cleaned = cleaned
+      .replace(/>\s+</g, '>\n<') // Asegurar saltos entre etiquetas
+      .replace(/([>])\s+/g, '$1\n') // Saltos después de cierre
+      .replace(/\s+([<])/g, '\n$1') // Saltos antes de apertura
+      .replace(/\n\s*\n/g, '\n') // Reducir múltiples saltos
+      .trim()
+  } else {
+    // Para código normal, limpiar pero mantener saltos de línea lógicos
+    cleaned = cleaned
+      .replace(/[ \t]+/g, ' ')
+      .replace(/^[ \t]+/gm, '')
+      .replace(/[ \t]+$/gm, '')
+      .trim()
+  }
+
+  // Evitar duplicar el prefijo
+  if (prefix.endsWith(cleaned.substring(0, 50))) {
+    return ''
+  }
+
+  console.log('[editor] sanitizeInlineCompletion output:', cleaned.substring(0, 100))
+  return cleaned
+}
+
+// Función helper para detectar si estamos en un string
+function isInString(model, position) {
+  const line = model.getLineContent(position.lineNumber)
+  const beforeCursor = line.slice(0, position.column - 1)
+  
+  let inString = false
+  let stringChar = null
+  let escaped = false
+  
+  for (let i = 0; i < beforeCursor.length; i++) {
+    const char = beforeCursor[i]
+    
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    
+    if (char === '\\') {
+      escaped = true
+      continue
+    }
+    
+    if ((char === '"' || char === "'") && !escaped) {
+      if (!inString) {
+        inString = true
+        stringChar = char
+      } else if (char === stringChar) {
+        inString = false
+        stringChar = null
+      }
+    }
+  }
+  
+  return inString
+}
+
+function withTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('timeout')), ms)
+    promise
+      .then(v => {
+        clearTimeout(t)
+        resolve(v)
+      })
+      .catch(err => {
+        clearTimeout(t)
+        reject(err)
+      })
+  })
 }

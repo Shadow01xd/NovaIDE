@@ -98,6 +98,363 @@ function walkDir(dir, depth = 0) {
 ipcMain.handle('fs:readDir',    async (_, p) => walkDir(p))
 ipcMain.handle('fs:readDirSub', async (_, p) => walkDir(p))
 ipcMain.handle('fs:readFile',   async (_, p) => fs.readFileSync(p, 'utf-8'))
+ipcMain.handle('fs:exists',     async (_, p) => fs.existsSync(p))
+
+// ── AI Inline Completion (Universal) ──────────────────────────────────────────
+const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json')
+
+function buildInlinePrompt({ prefix, suffix, language, filePath, extendedContext, currentLine, beforeCursor }) {
+  // Sistema inteligente según lenguaje y contexto
+  const isHTML = language === 'html'
+  const isJavaScript = language === 'javascript' || language === 'typescript'
+  const isPython = language === 'python'
+  
+  return {
+    system: `
+Eres un motor de autocompletado de nivel profesional como Cursor/Windsurf.
+
+PRINCIPIOS FUNDAMENTALES:
+1. Analiza el contexto completo del archivo
+2. Entiende el flujo lógico del código
+3. Proporciona continuaciones naturales y coherentes
+4. Para HTML: si escribe "html" o "htm", da el documento completo
+5. Para otros lenguajes: da continuaciones lógicas con múltiples líneas si es necesario
+6. NUNCA expliques lo que haces, solo da el código
+7. Mantén la sintaxis y estilo del lenguaje
+
+CONTEXTO COMPLETO: Usa todo el contexto del archivo para sugerencias inteligentes.
+SALTOS DE LÍNEA: Son válidos y necesarios para código multilinea.
+
+EJEMPLOS INTELIGENTES:
+- HTML "html" → Documento HTML completo con estructura moderna
+- JavaScript "const arr = [" → Array multilinea con elementos
+- Python "def " → Función completa con lógica
+- Cualquier lenguaje: Continúa el flujo lógico del código
+
+SÉ INTELIGENTE, NO LIMITADO.
+`.trim(),
+
+    user: `
+=== CONTEXTO COMPLETO ===
+Archivo: ${filePath || 'sin-nombre'}
+Lenguaje: ${language}
+Línea actual: ${currentLine}
+
+=== CÓDIGO ANTES DEL CURSOR (últimos 2000 caracteres) ===
+${prefix}
+
+=== CÓDIGO DESPUÉS DEL CURSOR (próximos 500 caracteres) ===
+${suffix}
+
+=== TEXTO INMEDIATAMENTE ANTES DEL CURSOR ===
+"${beforeCursor}"
+
+=== ANÁLISIS DE CONTEXTO ===
+${extendedContext ? 'Contexto extendido disponible' : 'Sin contexto extendido'}
+
+=== TAREA ===
+Basado en el análisis completo del contexto, proporciona la continuación lógica y natural del código.
+
+${isHTML ? 'Si es "html" o "htm", proporciona el documento HTML completo y moderno.' : 'Proporciona la continuación lógica del código.'}
+
+${isJavaScript ? 'Para JavaScript, usa sintaxis moderna y buenas prácticas.' : ''}
+${isPython ? 'Para Python, sigue PEP8 y usa tipado cuando sea apropiado.' : ''}
+
+=== RESPUESTA ===
+Proporciona ÚNICAMENTE el código que debe ir después de "${beforeCursor}":
+`.trim()
+  }
+}
+
+function sanitizeInlineText(text) {
+  if (!text) return ''
+
+  console.log('[sanitizeInlineText] Input:', {
+    text: text.substring(0, 300) + (text.length > 300 ? '...' : ''),
+    length: text.length,
+    containsHTML: /<[^>]*>/g.test(text)
+  })
+
+  let out = String(text)
+    .replace(/\r/g, '') // Eliminar carriage returns
+    .replace(/^```[\w-]*\n?/gm, '') // Eliminar bloques de código
+    .replace(/```$/gm, '')
+    .replace(/^`+|`+$/g, '')
+    .trimEnd()
+
+  // Eliminar texto explicativo pero de forma más inteligente
+  const explanatoryPatterns = [
+    /Como el texto antes del cursor es[^]*$/gim,
+    /te proporcionaré[^]*$/gim,
+    /Te proporcionaré[^]*$/gim,
+    /Aquí está[^]*$/gim,
+    /Aquí tienes[^]*$/gim,
+    /htmlDocument[^]*$/gim,
+    /Document[^]*$/gim,
+    /^.*explicación.*$/gim,
+    /^.*proporcionar.*$/gim,
+    /^.*completo.*$/gim,
+    /^[A-Za-z\s]+:.*$/gm,
+  ]
+
+  for (const pattern of explanatoryPatterns) {
+    out = out.replace(pattern, '')
+  }
+
+  // Detectar si es un documento HTML completo
+  const isHTMLDocument = out.includes('<!DOCTYPE') || out.includes('<html')
+  
+  if (isHTMLDocument) {
+    console.log('[sanitizeInlineText] HTML document detected, PRESERVING structure and newlines')
+    // Para documentos HTML, PRESERVAR estructura y saltos de línea COMPLETAMENTE
+    // Solo limpiar espacios excesivos pero mantener \n
+    out = out
+      .replace(/>\s+</g, '>\n<') // Asegurar saltos de línea entre etiquetas
+      .replace(/([>])\s+/g, '$1\n') // Saltos después de etiquetas de cierre
+      .replace(/\s+([<])/g, '\n$1') // Saltos antes de etiquetas de apertura
+      .replace(/\n\s*\n/g, '\n') // Reducir múltiples saltos a uno
+      .replace(/^\s+|\s+$/g, '') // Limpiar inicio y fin
+      .trim()
+  } else if (/<[^>]*>/g.test(out)) {
+    // Para fragmentos HTML, limpiar etiquetas pero mantener el texto
+    console.warn('[sanitizeInlineText] HTML fragment detected, cleaning tags')
+    out = out
+      .replace(/<!DOCTYPE[^>]*>/gi, '')
+      .replace(/<html[^>]*>/gi, '')
+      .replace(/<\/html>/gi, '')
+      .replace(/<head[^>]*>/gi, '')
+      .replace(/<\/head>/gi, '')
+      .replace(/<title[^>]*>/gi, '')
+      .replace(/<\/title>/gi, '')
+      .replace(/<meta[^>]*>/gi, '')
+      .replace(/<link[^>]*>/gi, '')
+      .replace(/<script[^>]*>/gi, '')
+      .replace(/<\/script>/gi, '')
+      .replace(/<body[^>]*>/gi, '')
+      .replace(/<\/body>/gi, '')
+      .replace(/<[^>]*>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  } else {
+    // Para código normal, PRESERVAR estructura y saltos de línea
+    console.log('[sanitizeInlineText] Normal code detected, preserving structure')
+    out = out
+      .replace(/[ \t]+/g, ' ') // Limpiar tabs y espacios múltiples
+      .replace(/^[ \t]+/gm, '') // Limpiar inicio de líneas
+      .replace(/[ \t]+$/gm, '') // Limpiar fin de líneas
+      .trim()
+  }
+
+  // Rechazar solo si contiene texto explicativo obvio
+  if (/explicación|proporcionar|como el texto|htmlDocument/i.test(out) && out.length > 50) {
+    console.warn('[sanitizeInlineText] Contains explanatory text, rejecting')
+    return ''
+  }
+
+  // Límites más permisivos
+  if (!isHTMLDocument && out.length > 800) {
+    console.warn('[sanitizeInlineText] Result too long for non-HTML, truncating')
+    out = out.substring(0, 800)
+  }
+
+  // Para documentos HTML, permitir hasta 1000 caracteres
+  if (isHTMLDocument && out.length > 1000) {
+    console.warn('[sanitizeInlineText] HTML document too long, truncating')
+    out = out.substring(0, 1000)
+  }
+
+  if (!out.trim()) return ''
+  if (/^(claro|sure|aquí|here|por supuesto)/i.test(out.trim())) return ''
+
+  console.log('[sanitizeInlineText] Output:', {
+    text: out.substring(0, 150) + (out.length > 150 ? '...' : ''),
+    length: out.length,
+    lineBreaks: (out.match(/\n/g) || []).length,
+    isHTMLDocument
+  })
+
+  return out
+}
+
+async function requestInlineOpenAICompatible({ baseUrl, apiKey, model, prompt }) {
+  const url = `${baseUrl.replace(/\/$/, '')}/chat/completions` 
+
+  // Validar y formatear API key
+  let formattedApiKey = apiKey || ''
+  if (formattedApiKey && !formattedApiKey.startsWith('sk-')) {
+    // Si no empieza con sk-, podría ser un formato diferente, lo usamos como está
+    // Algunas APIs usan diferentes prefijos o ninguno
+  }
+
+  const headers = {
+    'Content-Type': 'application/json',
+  }
+
+  // Solo agregar Authorization si hay una API key
+  if (formattedApiKey) {
+    headers['Authorization'] = `Bearer ${formattedApiKey}`
+  }
+
+  // Aumentar timeout para fetch - especialmente para DeepSeek
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 40000) // 40 segundos timeout
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model,
+        temperature: 0.2, // Un poco de creatividad para mejores sugerencias
+        max_tokens: 1000, // Aumentado significativamente para respuestas completas
+        stream: false,
+        messages: [
+          { role: 'system', content: prompt.system },
+          { role: 'user', content: prompt.user },
+        ],
+      }),
+      signal: controller.signal,
+    })
+
+    clearTimeout(timeoutId)
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '')
+      console.error(`API Error ${res.status}:`, txt)
+      
+      // Mensajes específicos para errores comunes
+      if (res.status === 401) {
+        throw new Error('API key inválida o no configurada')
+      } else if (res.status === 429) {
+        throw new Error('Límite de velocidad de la API alcanzado')
+      } else if (res.status >= 500) {
+        throw new Error('Error del servidor API - intenta de nuevo')
+      } else {
+        throw new Error(`HTTP ${res.status}: ${txt}`)
+      }
+    }
+
+    const data = await res.json()
+    return data?.choices?.[0]?.message?.content || ''
+  } catch (err) {
+    clearTimeout(timeoutId)
+    
+    if (err.name === 'AbortError') {
+      throw new Error('Timeout de la API - intenta de nuevo')
+    }
+    
+    throw err
+  }
+}
+
+// ── AI Inline Completion (Universal) ──────────────────────────────────────────
+ipcMain.handle('ai:inlineComplete', async (_, payload) => {
+  try {
+    console.log('[ai:inlineComplete] === REQUEST START ===')
+    console.log('[ai:inlineComplete] Payload:', {
+      model: payload?.model,
+      language: payload?.language,
+      filePath: payload?.filePath,
+      currentLine: payload?.currentLine,
+      beforeCursor: payload?.beforeCursor,
+      prefixLength: payload?.prefix?.length || 0,
+      suffixLength: payload?.suffix?.length || 0,
+      extendedContextLength: payload?.extendedContext?.length || 0,
+      hasApiKey: !!payload?.apiKey
+    })
+
+    const settings = (() => {
+      try { 
+        const data = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'))
+        return data
+      } catch (err) { 
+        return {} 
+      }
+    })()
+
+    // Usar el modelo desde el payload (viene del renderer) o fallback
+    const model = payload?.model || settings.aiModel || 'deepseek-chat'
+    
+    // Detectar automáticamente el baseUrl según el modelo
+    let baseUrl = settings.aiBaseUrl
+    if (!baseUrl) {
+      if (model.includes('llama') || model.includes('groq')) {
+        baseUrl = 'https://api.groq.com/openai/v1'
+      } else {
+        baseUrl = 'https://api.deepseek.com/v1'
+      }
+    }
+    
+    // Usar API key desde el payload (viene del renderer) o fallback a settings
+    const apiKey = payload?.apiKey || settings.aiApiKey || ''
+
+    console.log('[ai:inlineComplete] Config:', {
+      model,
+      baseUrl,
+      hasApiKey: !!apiKey,
+      apiKeyPrefix: apiKey ? apiKey.substring(0, 8) + '...' : 'none'
+    })
+
+    // Validaciones básicas
+    if (!baseUrl) {
+      console.warn('[ai:inlineComplete] No baseUrl configured')
+      return ''
+    }
+
+    if ((model.includes('llama') || model.includes('groq')) && !apiKey) {
+      console.warn('[ai:inlineComplete] No API key configured for Groq')
+      return ''
+    }
+
+    if (model.includes('deepseek') && !apiKey) {
+      console.warn('[ai:inlineComplete] No API key configured for DeepSeek')
+      return ''
+    }
+
+    console.log('[ai:inlineComplete] Building prompt...')
+    const prompt = buildInlinePrompt(payload || {})
+    console.log('[ai:inlineComplete] Prompt built, system length:', prompt.system.length)
+    console.log('[ai:inlineComplete] Prompt built, user length:', prompt.user.length)
+
+    console.log('[ai:inlineComplete] Calling API...')
+    let result = ''
+    if (model.includes('llama') || model.includes('groq')) {
+      result = await requestInlineOpenAICompatible({ baseUrl, apiKey, model, prompt })
+    } else {
+      result = await requestInlineOpenAICompatible({ baseUrl, apiKey, model, prompt })
+    }
+
+    console.log('[ai:inlineComplete] Raw result:', {
+      result: result ? (result.length > 200 ? result.substring(0, 200) + '...' : result) : 'empty',
+      length: result?.length || 0
+    })
+
+    console.log('[ai:inlineComplete] Sanitizing result...')
+    const sanitized = sanitizeInlineText(result)
+    console.log('[ai:inlineComplete] Sanitized result:', {
+      sanitized: sanitized ? (sanitized.length > 200 ? sanitized.substring(0, 200) + '...' : sanitized) : 'empty',
+      length: sanitized?.length || 0
+    })
+
+    console.log('[ai:inlineComplete] === REQUEST END ===')
+    return sanitized
+  } catch (err) {
+    console.error('[ai:inlineComplete] ERROR:', err.message)
+    
+    // Mensajes específicos para errores comunes
+    if (err.message.includes('timeout') || err.message.includes('AbortError')) {
+      console.warn('[ai:inlineComplete] Timeout - la API está tardando demasiado')
+    } else if (err.message.includes('401') || err.message.includes('API key')) {
+      console.warn('[ai:inlineComplete] Error de autenticación - revisa tu API key')
+    } else if (err.message.includes('429')) {
+      console.warn('[ai:inlineComplete] Demasiadas peticiones - espera un momento')
+    } else if (err.message.includes('500')) {
+      console.warn('[ai:inlineComplete] Error del servidor - intenta de nuevo')
+    }
+    
+    return ''
+  }
+})
 ipcMain.handle('fs:saveFile',   async (_, p, c) => { fs.writeFileSync(p, c, 'utf-8'); return true })
 ipcMain.handle('fs:copyFile',   async (_, s, d) => { fs.copyFileSync(s, d); return true })
 ipcMain.handle('fs:stat',       async (_, p) => { const st = fs.statSync(p); return { isDirectory: st.isDirectory() } })
@@ -110,7 +467,6 @@ ipcMain.handle('fs:deleteFile', async (_, p) => {
 ipcMain.handle('fs:rename',     async (_, o, n) => { fs.renameSync(o, n); return true })
 ipcMain.handle('fs:createFile', async (_, p) => { fs.writeFileSync(p, '', 'utf-8'); return true })
 ipcMain.handle('fs:createDir',  async (_, p) => { fs.mkdirSync(p, { recursive: true }); return true })
-ipcMain.handle('fs:exists',     async (_, p) => fs.existsSync(p))
 ipcMain.handle('shell:open',    async (_, p) => shell.openPath(p))
 
 // ── AI: streaming via Ollama ──────────────────────────────────────────────────
@@ -163,7 +519,6 @@ ipcMain.handle('ai:stream', async (_, { messages, model = 'deepseek-coder', reqI
 })
 
 // ── Settings persistence ──────────────────────────────────────────────────────
-const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json')
 ipcMain.handle('settings:get', () => {
   try { return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8')) } catch { return {} }
 })
@@ -321,14 +676,14 @@ ipcMain.handle('ai:streamDeepSeek', async (_, { messages, model, apiKey, reqId }
         try {
           const obj = JSON.parse(line.slice(6))
           const token = obj.choices?.[0]?.delta?.content || ''
-          mainWindow.webContents.send('ai:token', { token, done: false, reqId })
+          mainWin.webContents.send('ai:token', { token, done: false, reqId })
         } catch {}
       }
     }
     
-    mainWindow.webContents.send('ai:token', { token: '', done: true, reqId })
+    mainWin.webContents.send('ai:token', { token: '', done: true, reqId })
   } catch (err) {
-    mainWindow.webContents.send('ai:error', { error: err.message, reqId })
+    mainWin.webContents.send('ai:error', { error: err.message, reqId })
   }
 })
 
@@ -370,53 +725,54 @@ ipcMain.handle('ai:streamGroq', async (_, { messages, model, apiKey, reqId }) =>
         try {
           const obj = JSON.parse(line.slice(6))
           const token = obj.choices?.[0]?.delta?.content || ''
-          mainWindow.webContents.send('ai:token', { token, done: false, reqId })
+          mainWin.webContents.send('ai:token', { token, done: false, reqId })
         } catch {}
       }
     }
     
-    mainWindow.webContents.send('ai:token', { token: '', done: true, reqId })
+    mainWin.webContents.send('ai:token', { token: '', done: true, reqId })
   } catch (err) {
-    mainWindow.webContents.send('ai:error', { error: err.message, reqId })
+    mainWin.webContents.send('ai:error', { error: err.message, reqId })
   }
 })
 
 // ── Extension Store (Marketplace Oficial) ───────────────────────────────────
-const MarketplaceService = require('./marketplace/marketplace-service.js')
-const marketplace = new MarketplaceService()
+// Temporarily commented out for testing
+// const MarketplaceService = require('./marketplace/marketplace-service.js')
+// const marketplace = new MarketplaceService()
 
-ipcMain.handle('marketplace:search', async (_, query) => {
-  return await marketplace.searchExtensions(query)
-})
+// ipcMain.handle('marketplace:search', async (_, query) => {
+//   return await marketplace.searchExtensions(query)
+// })
 
-ipcMain.handle('marketplace:details', async (_, { publisher, name }) => {
-  return await marketplace.getExtensionDetails(publisher, name)
-})
+// ipcMain.handle('marketplace:details', async (_, { publisher, name }) => {
+//   return await marketplace.getExtensionDetails(publisher, name)
+// })
 
-ipcMain.handle('marketplace:install', async (_, { publisher, name, version }) => {
-  try {
-    const meta = await marketplace.installExtension(publisher, name, version)
-    return { success: true, meta }
-  } catch (error) {
-    console.error('Failed to install extension:', error)
-    throw error
-  }
-})
+// ipcMain.handle('marketplace:install', async (_, { publisher, name, version }) => {
+//   try {
+//     const meta = await marketplace.installExtension(publisher, name, version)
+//     return { success: true, meta }
+//   } catch (error) {
+//     console.error('Failed to install extension:', error)
+//     throw error
+//   }
+// })
 
-ipcMain.handle('marketplace:uninstall', async (_, { publisher, name }) => {
-  try {
-    const result = await marketplace.uninstallExtension(publisher, name)
-    return { success: true, result }
-  } catch (error) {
-    console.error('Failed to uninstall extension:', error)
-    throw error
-  }
-})
+// ipcMain.handle('marketplace:uninstall', async (_, { publisher, name }) => {
+//   try {
+//     const result = await marketplace.uninstallExtension(publisher, name)
+//     return { success: true, result }
+//   } catch (error) {
+//     console.error('Failed to uninstall extension:', error)
+//     throw error
+//   }
+// })
 
-ipcMain.handle('marketplace:installed', async () => {
-  return await marketplace.getInstalledExtensions()
-})
+// ipcMain.handle('marketplace:installed', async () => {
+//   return await marketplace.getInstalledExtensions()
+// })
 
-ipcMain.handle('marketplace:check-updates', async () => {
-  return await marketplace.checkUpdates()
-})
+// ipcMain.handle('marketplace:check-updates', async () => {
+//   return await marketplace.checkUpdates()
+// })

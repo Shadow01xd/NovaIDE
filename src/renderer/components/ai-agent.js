@@ -437,6 +437,7 @@ export class AIAgent {
 
     // Escuchar eventos de estado para adjuntar código automáticamente
     this.state.on('sendToAI', (data) => {
+      console.log('[AIAgent] sendToAI event received:', data);
       if (data?.code) {
         this.pendingContext = {
           type: 'selection',
@@ -445,15 +446,22 @@ export class AIAgent {
           lang: data.lang,
           selection: data.selection
         };
+        console.log('[AIAgent] Pending context set:', this.pendingContext);
         this.updateContextDisplay();
-        this.container.querySelector('#ai-input')?.focus();
-        // Abrir panel si está cerrado
-        if (!this.state.aiPanelOpen) {
-          this.state.aiPanelOpen = true;
-          this.state.emit('panelToggle', { panel: 'ai', open: true });
+        
+        // Cambiar a tab de chat si no estamos ya allí
+        if (this.activeTab !== 'agent') {
+          console.log('[AIAgent] Switching to agent tab');
+          this.switchTab('agent');
         }
       }
     });
+
+    // Abrir panel si está cerrado
+    if (!this.state.aiPanelOpen) {
+      this.state.aiPanelOpen = true;
+      this.state.emit('panelToggle', { panel: 'ai', open: true });
+    }
   }
 
   switchTab(tab) {
