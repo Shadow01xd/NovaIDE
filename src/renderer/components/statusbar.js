@@ -21,6 +21,7 @@ export function createStatusBar(container, state) {
         <span class="sb-item sb-enc">UTF-8</span>
         <span class="sb-item sb-model" title="Modelo IA activo">✦ ${state.aiModel?.split(':')[0] || 'DeepSeek'}</span>
         <span class="sb-item sb-cursor" id="sb-cursor">Ln 1, Col 1</span>
+        <span class="sb-item sb-theme" id="sb-theme-selector" title="Cambiar tema (Ctrl+K Ctrl+T)">🎨</span>
       </div>
     `
   }
@@ -37,6 +38,21 @@ export function createStatusBar(container, state) {
       const el = document.getElementById('sb-cursor')
       if (el) el.textContent = `Ln ${e.position.lineNumber}, Col ${e.position.column}`
     })
+  })
+
+  // Manejar clic en selector de tema
+  container.addEventListener('click', (e) => {
+    if (e.target.id === 'sb-theme-selector') {
+      e.preventDefault()
+      e.stopPropagation()
+      
+      // Disparar evento personalizado para que el main.js lo maneje
+      const event = new CustomEvent('openThemeSelector', {
+        bubbles: true,
+        detail: { target: e.target }
+      })
+      document.dispatchEvent(event)
+    }
   })
 
   render()

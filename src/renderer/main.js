@@ -8,6 +8,9 @@ import { createTerminalPanel } from './components/terminal.js'
 import { createStatusBar }     from './components/statusbar.js'
 import { createExtensionsPanel } from './components/ExtensionsPanel.js'
 import { DragAndDropManager }  from './components/drag-drop.js'
+// Importar sistema de temas
+import { themeManager }        from './components/ThemeManager.js'
+import { createThemeSelectorPopup } from './components/ThemeSelectorPopup.js'
 
 // Cargar settings guardados
 const savedSettings = await window.api.getSettings()
@@ -64,10 +67,18 @@ function buildWelcome() {
   `
 }
 
+// ── Inicializar sistema de temas ─────────────────────────────────────────────
+await themeManager.init()
+
 // ── Inicializar componentes ──────────────────────────────────────────────────
-createSidebar(document.getElementById('sidebar'), state)
+const sidebarElement = document.getElementById('sidebar')
+createSidebar(sidebarElement, state)
+
+// Crear popup de temas (accesible desde barra de estado)
+const themePopup = createThemeSelectorPopup(themeManager)
+
 createTabs(document.getElementById('tabs'), state)
-const editor = await createEditor(document.getElementById('editor'), state)
+const editor = await createEditor(document.getElementById('editor'), state, themeManager)
 window.__editorInstance = editor
 createAIAgent(document.getElementById('ai-panel'), state)
 createStatusBar(document.getElementById('statusbar'), state)
@@ -237,6 +248,10 @@ window.api.onMenu(async (event) => {
       document.querySelector('[data-panel="search"]')?.click(); break
     case 'toggleExtensions':
       document.querySelector('[data-panel="extensions"]')?.click(); break
+    case 'cycleTheme':
+      themeManager.cycleTheme(); break
+    case 'openThemeSelector':
+      themeSelector?.open(); break
   }
 })
 
@@ -259,6 +274,22 @@ document.addEventListener('keydown', async (e) => {
     const content = state.editorInstance.getValue()
     await window.api.saveFile(state.currentFile, content)
     state.markSaved(state.currentFile, content)
+    return
+  }
+  
+  // Atajos para temas (Ctrl+K Ctrl+T)
+  if (e.key === 'k') {
+    e.preventDefault()
+    setTimeout(() => {
+      document.addEventListener('keydown', function handler(t) {
+        if (t.ctrlKey && t.key === 't') {
+          t.preventDefault()
+          t.stopPropagation()
+          themeManager.cycleTheme()
+          document.removeEventListener('keydown', handler)
+        }
+      })
+    }, 50)
     return
   }
 })
@@ -349,6 +380,14 @@ window.addEventListener('beforeunload', () => {
     aiModel: state.aiModel,
     sidebarWidth: state.sidebarWidth,
     aiPanelWidth: state.aiPanelWidth,
-    terminalHeight: state.terminalHeight
+    terminalHeight: state.terminalHeight,
+    // El tema se guarda automáticamente en localStorage por ThemeManager
   })
 })
+
+// ── Configurar listeners de tema del sistema ───────────────────────────────────────
+themeManager.setupSystemThemeListener()
+themeManager.setupKeyboardShortcuts()
+
+// ── Exponer ThemeManager globalmente para acceso desde otros componentes ─────────────
+window.__themeManager = themeManager

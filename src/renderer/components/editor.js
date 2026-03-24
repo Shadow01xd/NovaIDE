@@ -15,59 +15,44 @@ const LANG_MAP = {
 export function getLang(filePath) {
   if (!filePath) return 'plaintext'
   const ext = filePath.split('.').pop()?.toLowerCase()
-  return LANG_MAP[ext] || 'plaintext'
+  const lang = LANG_MAP[ext] || 'plaintext'
+  
+  // Para archivos JSX/TSX, asegurarse de que se use el modo correcto
+  if (ext === 'jsx' || ext === 'tsx') {
+    return lang // 'javascript' o 'typescript'
+  }
+  
+  return lang
 }
 
 // Decoraciones de la IA (líneas añadidas/modificadas)
 let aiDecorations = []
 
-export async function createEditor(container, state) {
+// Referencia al ThemeManager
+let themeManager = null
+
+export async function createEditor(container, state, themeMgr = null) {
   await window.monacoReady
   const monaco = window.monaco
   state.monacoRef = monaco
+  
+  // Guardar referencia al ThemeManager
+  themeManager = themeMgr
 
-  // ── Tema oscuro ────────────────────────────────────────────────────────
-  monaco.editor.defineTheme('myide-dark', {
-    base: 'vs-dark', inherit: true,
-    rules: [
-      { token: 'comment',   foreground: '6e7681', fontStyle: 'italic' },
-      { token: 'keyword',   foreground: 'ff7b72' },
-      { token: 'string',    foreground: 'a5d6ff' },
-      { token: 'number',    foreground: 'f2cc60' },
-      { token: 'type',      foreground: 'ffa657' },
-      { token: 'function',  foreground: 'd2a8ff' },
-      { token: 'variable',  foreground: 'e6edf3' },
-      { token: 'class',     foreground: 'ffa657' },
-      { token: 'decorator', foreground: 'f97583' },
-    ],
-    colors: {
-      'editor.background':               '#0d1117',
-      'editor.foreground':               '#e6edf3',
-      'editor.lineHighlightBackground':  '#161b22',
-      'editorLineNumber.foreground':     '#3d444d',
-      'editorLineNumber.activeForeground':'#e6edf3',
-      'editorCursor.foreground':         '#58a6ff',
-      'editor.selectionBackground':      '#1f6feb55',
-      'editor.wordHighlightBackground':  '#1f6feb33',
-      'editorBracketMatch.background':   '#17375e',
-      'editorBracketMatch.border':       '#58a6ff',
-      'scrollbarSlider.background':      '#30363d66',
-      'scrollbarSlider.hoverBackground': '#30363d99',
-      'editorGutter.background':         '#0d1117',
-      'editorWidget.background':         '#161b22',
-      'editorSuggestWidget.background':  '#161b22',
-      'editorSuggestWidget.border':      '#30363d',
-      'editorSuggestWidget.selectedBackground': '#1f6feb44',
-      // Colores IA diff
-      'diffEditor.insertedTextBackground': '#2ea04326',
-      'diffEditor.removedTextBackground':  '#f8514926',
-    },
-  })
+  // ── Configuración de TypeScript/JavaScript con JSX ───────────────────────────
+  setupTypeScriptAndJSX(monaco)
 
+  // ── Configuración del Editor ────────────────────────────────────────────────
+  // Los temas se gestionan a través de ThemeManager
+  // No definimos temas aquí para evitar conflictos
+
+  // Determinar tema inicial
+  const initialTheme = themeManager ? themeManager.themes[themeManager.currentTheme]?.monacoTheme : 'vs-dark'
+  
   const editor = monaco.editor.create(container, {
     value: '',
     language: 'plaintext',
-    theme: 'myide-dark',
+    theme: initialTheme,
     fontSize: state.settings.fontSize,
     fontFamily: state.settings.fontFamily,
     fontLigatures: true,
@@ -107,6 +92,9 @@ export async function createEditor(container, state) {
   })
 
   state.editorInstance = editor
+  
+  // Guardar instancia global para acceso desde otros componentes
+  window.__editorInstance = editor
 
   // ── Proveedor de autocompletado con IA ────────────────────────────────
   // Se activa con Ctrl+Space cuando hay contexto suficiente
@@ -204,8 +192,92 @@ export async function createEditor(container, state) {
       minimap: { enabled: s.minimap },
     })
   })
+  
+  // ── Integración con ThemeManager ────────────────────────────────────────
+  if (themeManager) {
+    // Escuchar cambios de tema
+    themeManager.addThemeChangeListener((themeId, theme) => {
+      if (monaco && editor) {
+        try {
+          monaco.editor.setTheme(theme.monacoTheme)
+        } catch (error) {
+          console.warn('Error al aplicar tema de Monaco:', error)
+          // Fallback a tema por defecto
+          monaco.editor.setTheme('vs-dark')
+        }
+      }
+    })
+    
+    // Aplicar tema actual si ya está cargado
+    if (themeManager.currentTheme && themeManager.monacoReady) {
+      const currentTheme = themeManager.themes[themeManager.currentTheme]
+      if (currentTheme) {
+        monaco.editor.setTheme(currentTheme.monacoTheme)
+      }
+    }
+  }
 
   return editor
+}
+
+// ── Funciones de utilidad para gestión de temas ─────────────────────────────
+
+/**
+ * Aplica un tema de Monaco al editor
+ * @param {Object} editor - Instancia del editor Monaco
+ * @param {string} themeId - ID del tema a aplicar
+ */
+export function applyEditorTheme(editor, themeId) {
+  if (!editor || !window.monaco) return
+  
+  try {
+    // Si hay ThemeManager, usarlo
+    if (themeManager && themeManager.themes[themeId]) {
+      const theme = themeManager.themes[themeId]
+      window.monaco.editor.setTheme(theme.monacoTheme)
+    } else {
+      // Fallback a temas básicos de Monaco
+      const fallbackThemes = {
+        'dark': 'vs-dark',
+        'light': 'vs',
+        'high-contrast': 'hc-black'
+      }
+      window.monaco.editor.setTheme(fallbackThemes[themeId] || 'vs-dark')
+    }
+  } catch (error) {
+    console.error('Error aplicando tema al editor:', error)
+  }
+}
+
+/**
+ * Obtiene el tema actual del editor
+ * @param {Object} editor - Instancia del editor Monaco
+ * @returns {string} ID del tema actual
+ */
+export function getCurrentEditorTheme(editor) {
+  if (!editor || !window.monaco) return 'dark'
+  
+  try {
+    // Si hay ThemeManager, obtener tema actual
+    if (themeManager) {
+      return themeManager.currentTheme || 'dark'
+    }
+    
+    // Intentar obtener desde Monaco (no siempre disponible)
+    const theme = window.monaco.editor.getTheme()
+    return theme || 'dark'
+  } catch (error) {
+    console.warn('Error obteniendo tema del editor:', error)
+    return 'dark'
+  }
+}
+
+/**
+ * Establece el ThemeManager para el editor
+ * @param {Object} themeMgr - Instancia de ThemeManager
+ */
+export function setThemeManager(themeMgr) {
+  themeManager = themeMgr
 }
 
 // ── Aplicar edición IA con highlight de cambios ────────────────────────────
@@ -269,4 +341,221 @@ function clearAIDecorations(editorInst) {
 
 function isSelectionEmpty(sel) {
   return sel.startLineNumber === sel.endLineNumber && sel.startColumn === sel.endColumn
+}
+
+// ── Configuración de TypeScript/JavaScript con JSX ─────────────────────────────
+function setupTypeScriptAndJSX(monaco) {
+  // Configuración de TypeScript compiler options
+  const tsCompilerOptions = {
+    target: monaco.languages.typescript.ScriptTarget.ES2020,
+    allowNonTsExtensions: true,
+    moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+    module: monaco.languages.typescript.ModuleKind.ESNext,
+    noEmit: true,
+    esModuleInterop: true,
+    allowSyntheticDefaultImports: true,
+    jsx: monaco.languages.typescript.JsxEmit.React,
+    jsxFactory: 'React.createElement',
+    jsxFragmentFactory: 'React.Fragment',
+    allowJs: true,
+    checkJs: false,
+    strict: true,
+    noImplicitAny: false, // Reducir errores para mejor experiencia
+    skipLibCheck: true,
+    forceConsistentCasingInFileNames: true,
+    resolveJsonModule: true,
+    isolatedModules: true,
+    declaration: false,
+    sourceMap: true,
+  }
+
+  // Aplicar configuración a TypeScript y JavaScript
+  monaco.languages.typescript.typescriptDefaults.setCompilerOptions(tsCompilerOptions)
+  monaco.languages.typescript.javascriptDefaults.setCompilerOptions({
+    ...tsCompilerOptions,
+    allowJs: true,
+    checkJs: false,
+  })
+
+  // Agregar tipos de React como extraLibs
+  const reactTypes = {
+    // React types básicos
+    'react.d.ts': `
+      declare namespace React {
+        interface FunctionComponent<P = {}> {
+          (props: P): JSX.Element | null;
+          displayName?: string;
+        }
+        
+        interface ComponentClass<P = {}> {
+          new (props: P): Component<P>;
+          displayName?: string;
+        }
+        
+        interface Component<P = {}> {
+          setState<K extends keyof P>(state: ((prevState: Readonly<P>, props: Readonly<P>) => (Pick<P, K> | P | null)) | (Pick<P, K> | P | null), callback?: () => void): void;
+          forceUpdate(callback?: () => void): void;
+          readonly props: Readonly<P>;
+          state: Readonly<P>;
+          context: any;
+          refs: { [key: string]: ReactInstance };
+        }
+        
+        interface ReactInstance {
+          render(): ReactNode;
+        }
+        
+        type ReactNode = ReactElement | string | number | ReactFragment | ReactPortal | boolean | null | undefined;
+        
+        interface ReactElement<P = any, T extends string | JSXElementConstructor<any> = string | JSXElementConstructor<any>> {
+          type: T;
+          props: P;
+          key: Key | null;
+        }
+        
+        interface ReactFragment {
+          key?: Key | null;
+        }
+        
+        interface ReactPortal {
+          key: Key | null;
+          children: ReactNode;
+        }
+        
+        type Key = string | number;
+        
+        interface Attributes {
+          key?: Key;
+        }
+        
+        interface DOMAttributes<T> {
+          children?: ReactNode;
+        }
+        
+        interface IntrinsicAttributes extends Attributes { }
+        interface IntrinsicClassAttributes<T> extends Attributes { }
+        
+        interface IntrinsicElements {
+          [elemName: string]: DOMAttributes<any> & IntrinsicAttributes;
+        }
+        
+        type JSXElementConstructor<P = {}> = 
+          | ((props: P) => ReactElement | null)
+          | (new (props: P) => Component<P>);
+        
+        namespace JSX {
+          interface IntrinsicAttributes extends Attributes { }
+          interface IntrinsicClassAttributes<T> extends Attributes { }
+          interface IntrinsicElements {
+            [elemName: string]: DOMAttributes<any> & IntrinsicAttributes;
+          }
+          interface ElementAttributesProperty { props: {}; }
+          interface ElementChildrenAttribute { children: {}; }
+        }
+      }
+      
+      declare const React: {
+        createElement<P extends {}>(
+          type: string | FunctionComponent<P> | ComponentClass<P>,
+          props?: Attributes & P,
+          ...children: ReactNode[]
+        ): ReactElement<P>;
+        Fragment: ReactFragment;
+        Component: ComponentConstructor;
+        FunctionComponent: FunctionComponentConstructor;
+      };
+      
+      type ComponentConstructor = new <P = {}>(props: P) => Component<P>;
+      type FunctionComponentConstructor = <P = {}>(props: P) => ReactElement<P> | null;
+      
+      export = React;
+    `,
+    
+    // React DOM types
+    'react-dom.d.ts': `
+      declare namespace ReactDOM {
+        function render(element: React.ReactNode, container: Element): void;
+        function hydrate(element: React.ReactNode, container: Element): void;
+        function createPortal(children: React.ReactNode, container: Element): React.ReactPortal;
+      }
+      
+      declare const ReactDOM: typeof ReactDOM;
+      export = ReactDOM;
+    `,
+    
+    // Global types
+    'global.d.ts': `
+      declare global {
+        namespace JSX {
+          interface IntrinsicElements {
+            div: React.DetailedHTMLProps<React.HTMLAttributes<HTMLDivElement>, HTMLDivElement>;
+            span: React.DetailedHTMLProps<React.HTMLAttributes<HTMLSpanElement>, HTMLSpanElement>;
+            button: React.DetailedHTMLProps<React.ButtonHTMLAttributes<HTMLButtonElement>, HTMLButtonElement>;
+            input: React.DetailedHTMLProps<React.InputHTMLAttributes<HTMLInputElement>, HTMLInputElement>;
+            form: React.DetailedHTMLProps<React.FormHTMLAttributes<HTMLFormElement>, HTMLFormElement>;
+            a: React.DetailedHTMLProps<React.AnchorHTMLAttributes<HTMLAnchorElement>, HTMLAnchorElement>;
+            img: React.DetailedHTMLProps<React.ImgHTMLAttributes<HTMLImageElement>, HTMLImageElement>;
+            p: React.DetailedHTMLProps<React.HTMLAttributes<HTMLParagraphElement>, HTMLParagraphElement>;
+            h1: React.DetailedHTMLProps<React.HTMLAttributes<HTMLHeadingElement>, HTMLHeadingElement>;
+            h2: React.DetailedHTMLProps<React.HTMLAttributes<HTMLHeadingElement>, HTMLHeadingElement>;
+            h3: React.DetailedHTMLProps<React.HTMLAttributes<HTMLHeadingElement>, HTMLHeadingElement>;
+            h4: React.DetailedHTMLProps<React.HTMLAttributes<HTMLHeadingElement>, HTMLHeadingElement>;
+            h5: React.DetailedHTMLProps<React.HTMLAttributes<HTMLHeadingElement>, HTMLHeadingElement>;
+            h6: React.DetailedHTMLProps<React.HTMLAttributes<HTMLHeadingElement>, HTMLHeadingElement>;
+            ul: React.DetailedHTMLProps<React.HTMLAttributes<HTMLUListElement>, HTMLUListElement>;
+            ol: React.DetailedHTMLProps<React.HTMLAttributes<HTMLOListElement>, HTMLOListElement>;
+            li: React.DetailedHTMLProps<React.HTMLAttributes<HTMLLIElement>, HTMLLIElement>;
+            table: React.DetailedHTMLProps<React.TableHTMLAttributes<HTMLTableElement>, HTMLTableElement>;
+            tr: React.DetailedHTMLProps<React.HTMLAttributes<HTMLTableRowElement>, HTMLTableRowElement>;
+            td: React.DetailedHTMLProps<React.TdHTMLAttributes<HTMLTableDataCellElement>, HTMLTableDataCellElement>;
+            th: React.DetailedHTMLProps<React.ThHTMLAttributes<HTMLTableHeaderCellElement>, HTMLTableHeaderCellElement>;
+            section: React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+            nav: React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+            main: React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+            header: React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+            footer: React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+            article: React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+            aside: React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+          }
+        }
+      }
+      
+      export {};
+    `
+  }
+
+  // Agregar los tipos de React al workspace
+  Object.entries(reactTypes).forEach(([filename, content]) => {
+    const uri = monaco.Uri.parse(`file:///node_modules/@types/${filename}`)
+    monaco.languages.typescript.typescriptDefaults.addExtraLib(content, uri.toString())
+    monaco.languages.typescript.javascriptDefaults.addExtraLib(content, uri.toString())
+  })
+
+  // Configurar diagnóstico para ignorar ciertos errores comunes
+  monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
+    noSemanticValidation: false,
+    noSyntaxValidation: false,
+    // Ignorar errores específicos que son comunes en desarrollo
+    diagnosticCodesToIgnore: [
+      2307, // Cannot find module
+      2304, // Cannot find name
+      1378, // '...' cannot be called
+      1375, // 'await' expressions are only allowed
+      7016, // Could not find a declaration file
+    ]
+  })
+
+  monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
+    noSemanticValidation: false,
+    noSyntaxValidation: false,
+    diagnosticCodesToIgnore: [
+      2307, // Cannot find module
+      2304, // Cannot find name
+      1378, // '...' cannot be called
+      1375, // 'await' expressions are only allowed
+      7016, // Could not find a declaration file
+    ]
+  })
+
+  console.log('✅ TypeScript/JavaScript con JSX configurado correctamente')
 }

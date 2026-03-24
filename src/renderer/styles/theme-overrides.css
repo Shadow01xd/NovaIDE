@@ -1,0 +1,240 @@
+/* src/renderer/styles/theme-overrides.css */
+/* Override dinámico para el sistema de temas - NO modifica el CSS original */
+
+/* ========================================
+   SOBRESCRITURAS PARA TEMA OSCURO (por defecto)
+   ======================================== */
+/* El tema oscuro usa las variables originales sin cambios */
+
+/* ========================================
+   TEMA CLARO
+   ======================================== */
+[data-theme="light"] {
+  /* Sobrescribir variables originales para tema claro */
+  --bg0:     #f0f0f0;   /* sidebar icons */
+  --bg1:     #ffffff;   /* editor background */
+  --bg2:     #f8f8f8;   /* panels */
+  --bg3:     #e8e8e8;   /* hover, inputs */
+  --bg4:     #d4d4d4;   /* borders, separadores */
+  --text0:   #333333;   /* primario */
+  --text1:   #666666;   /* secundario */
+  --text2:   #999999;   /* faint */
+  --accent:  #0066b3;   /* blue accent */
+  --accent-hover: #005299;
+  --green:   #008000;
+  --red:     #ff0000;
+  --orange:  #ff8c00;
+  --purple:  #7c3aed;
+  --ai:      #7c3aed;   /* color IA */
+  --ai-light: #a78bfa;
+}
+
+/* ========================================
+   TEMA ALTO CONTRASTE
+   ======================================== */
+[data-theme="high-contrast"] {
+  /* Sobrescribir variables originales para alto contraste */
+  --bg0:     #000000;   /* sidebar icons */
+  --bg1:     #000000;   /* editor background */
+  --bg2:     #1a1a1a;   /* panels */
+  --bg3:     #333333;   /* hover, inputs */
+  --bg4:     #ffffff;   /* borders, separadores */
+  --text0:   #ffff00;   /* primario */
+  --text1:   #ffffff;   /* secundario */
+  --text2:   #cccccc;   /* faint */
+  --accent:  #1e90ff;   /* blue accent */
+  --accent-hover: #4169e1;
+  --green:   #00ff00;
+  --red:     #ff0000;
+  --orange:  #ffa500;
+  --purple:  #ff00ff;
+  --ai:      #ff00ff;   /* color IA */
+  --ai-light: #ff88ff;
+}
+
+/* ========================================
+   TRANSICIONES SUAVES
+   ======================================== */
+* {
+  transition: background-color 0.2s ease,
+              color 0.2s ease,
+              border-color 0.2s ease;
+}
+
+/* Evitar transiciones en elementos que no las necesitan */
+.no-transition,
+.no-transition *,
+.monaco-editor,
+.monaco-editor * {
+  transition: none !important;
+}
+
+/* ========================================
+   AJUSTES ESPECÍFICOS PARA ALTO CONTRASTE
+   ======================================== */
+[data-theme="high-contrast"] .sidebar-icon-btn {
+  border: 1px solid var(--text1);
+}
+
+[data-theme="high-contrast"] .tab {
+  border: 1px solid var(--text1);
+}
+
+[data-theme="high-contrast"] .ctx-item {
+  border: 1px solid var(--text1);
+}
+
+[data-theme="high-contrast"] .welcome-btn {
+  border: 2px solid var(--text1);
+}
+
+/* ========================================
+   AJUSTES PARA TEMA CLARO
+   ======================================== */
+[data-theme="light"] .sidebar-icon-btn:hover {
+  background: var(--bg3);
+  color: var(--text0);
+}
+
+[data-theme="light"] .tab:hover {
+  background: var(--bg3);
+}
+
+/* ========================================
+   CORRECCIÓN PARA SIDEBAR THEME SELECTOR
+   ======================================== */
+.sidebar-theme-selector {
+  background: var(--bg2) !important;
+}
+
+.sidebar-theme-selector-container {
+  background: var(--bg2) !important;
+}
+
+[data-theme="light"] .sidebar-theme-selector {
+  background: var(--bg2) !important;
+}
+
+[data-theme="light"] .sidebar-theme-selector-container {
+  background: var(--bg2) !important;
+}
+
+[data-theme="high-contrast"] .sidebar-theme-selector {
+  background: var(--bg2) !important;
+}
+
+[data-theme="high-contrast"] .sidebar-theme-selector-container {
+  background: var(--bg2) !important;
+}
+
+/* ========================================
+   VARIABLES PARA MONACO (integradas con ThemeManager)
+   ======================================== */
+:root {
+  --monaco-bg: #1e1e1e;
+  --monaco-fg: #cccccc;
+  --monaco-selection: #264f78;
+  --monaco-cursor: #aeafad;
+}
+
+[data-theme="light"] {
+  --monaco-bg: #ffffff;
+  --monaco-fg: #333333;
+  --monaco-selection: #add6ff;
+  --monaco-cursor: #000000;
+}
+
+[data-theme="high-contrast"] {
+  --monaco-bg: #000000;
+  --monaco-fg: #ffff00;
+  --monaco-selection: #1e90ff;
+  --monaco-cursor: #ffffff;
+}
+
+/* ========================================
+   THEME SELECTOR POPUP ESTILOS
+   ======================================== */
+.theme-selector-popup {
+  background: var(--bg2);
+  border: 1px solid var(--bg4);
+  border-radius: var(--r);
+  box-shadow: 0 8px 32px var(--shadow-medium, rgba(0, 0, 0, 0.3));
+  min-width: 320px;
+  max-width: 400px;
+  font-family: var(--font-ui);
+}
+
+.theme-selector-popup-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.theme-selector-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--bg4);
+  background: var(--bg3);
+}
+
+.theme-selector-popup-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text0);
+}
+
+.theme-selector-popup-close {
+  background: none;
+  border: none;
+  color: var(--text2);
+  cursor: pointer;
+  font-size: 16px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  transition: all var(--transition-fast);
+}
+
+.theme-selector-popup-close:hover {
+  background: var(--bg4);
+  color: var(--text0);
+}
+
+.theme-selector-popup-body {
+  padding: 16px;
+}
+
+/* Estilo especial para el selector dentro del popup */
+.theme-selector-popup .theme-selector {
+  width: 100%;
+}
+
+.theme-selector-popup .theme-selector-trigger {
+  background: var(--bg3);
+  border-color: var(--bg4);
+}
+
+.theme-selector-popup .theme-selector-trigger:hover {
+  background: var(--bg4);
+}
+
+/* Estilo para el botón en la barra de estado */
+.sb-theme {
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border-radius: var(--r-sm);
+  padding: 2px 6px;
+}
+
+.sb-theme:hover {
+  background: var(--bg3);
+  color: var(--accent);
+}
+
+.sb-theme:active {
+  transform: scale(0.95);
+}
