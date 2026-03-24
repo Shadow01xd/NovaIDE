@@ -304,6 +304,17 @@ export class FileManager {
     itemEl.dataset.path = item.path
     itemEl.dataset.type = item.isDirectory ? 'folder' : 'file'
     itemEl.dataset.depth = depth
+    itemEl.draggable = true
+    
+    // Configurar el Drag an Drop interno hacia el Chat/Editor
+    itemEl.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('application/nvcode-file', JSON.stringify({
+        path: item.path,
+        name: item.name,
+        isDirectory: item.isDirectory
+      }))
+      e.dataTransfer.effectAllowed = 'copyMove'
+    })
     
     // Indentación
     itemEl.style.paddingLeft = `${8 + depth * 16}px`

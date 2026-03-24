@@ -26,7 +26,16 @@ function renderMarkdown(text) {
   let html = escapeHtml(text)
     .replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
       const highlighted = window.hljs ? window.hljs.highlightAuto(code.trim(), lang ? [lang] : undefined).value : escapeHtml(code.trim());
-      return `<pre><code class="language-${lang || 'plaintext'}">${highlighted}</code></pre>`;
+      const langName = lang || 'texto';
+      return `<div class="ai-code-block">
+                <div class="ai-code-header">
+                  <span class="ai-code-lang">${langName}</span>
+                  <div class="ai-code-actions"></div>
+                </div>
+                <div class="ai-code-body">
+                  <pre><code class="language-${lang || 'plaintext'}">${highlighted}</code></pre>
+                </div>
+              </div>`;
     })
     .replace(/`([^`\n]+)`/g, '<code class="inline-code">$1</code>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
@@ -141,8 +150,8 @@ export class AIAgent {
           </div>
         </div>
 
-        <!-- Panel de configuración (colapsable) -->
-        <div class="ai-settings-panel" id="ai-settings-panel" style="display: none;">
+        <!-- Panel de configuración (Popover) -->
+        <div class="ai-settings-popover" id="ai-settings-panel" style="display: none;">
           <div class="ai-settings-group">
             <label>Proveedor:</label>
             <select id="ai-provider-select" class="ai-select">
@@ -168,7 +177,7 @@ export class AIAgent {
           <div class="ai-settings-group">
             <label class="ai-checkbox-label">
               <input type="checkbox" id="ai-confirm-toggle" ${this.confirmBeforeExecute ? 'checked' : ''}>
-              Pedir confirmación antes de ejecutar acciones
+              Pedir confirmación al actuar
             </label>
           </div>
         </div>
@@ -180,42 +189,39 @@ export class AIAgent {
             <div class="ai-messages" id="ai-messages">
               ${this.messages.length === 0 ? this.renderWelcome() : ''}
             </div>
-            
+          </div>
+
+          <!-- Input Flotante -->
+          <div class="ai-floating-input" id="ai-floating-input" style="display: ${this.activeTab === 'history' ? 'none' : 'flex'}">
             <!-- Contexto adjunto -->
             <div class="ai-context-bar" id="ai-context-bar" style="display: none;">
               <div class="ai-context-chips" id="ai-context-chips"></div>
             </div>
-
-            <!-- Input area -->
-            <div class="ai-input-container">
-              <div class="ai-input-wrapper">
-                <textarea 
-                  id="ai-input" 
-                  class="ai-textarea" 
-                  placeholder="Escribe una instrucción... (Ctrl+Enter para enviar)"
-                  rows="1"
-                  maxlength="4000"
-                ></textarea>
-                <div class="ai-input-actions">
-                  <button class="ai-btn-icon" id="ai-btn-attach" title="Adjuntar contexto (@)">@</button>
-                  <button class="ai-btn-send" id="ai-btn-send" title="Enviar (Ctrl+Enter)">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <line x1="22" y1="2" x2="11" y2="13"></line>
-                      <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                    </svg>
-                  </button>
-                  <button class="ai-btn-stop" id="ai-btn-stop" style="display: none;" title="Detener">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                      <rect x="6" y="6" width="12" height="12"></rect>
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              <div class="ai-input-footer">
-                <span class="ai-status" id="ai-status"></span>
-                <span class="ai-hint">Ctrl+Enter · @ para contexto</span>
+            
+            <div class="ai-input-wrapper">
+              <textarea 
+                id="ai-input" 
+                class="ai-textarea" 
+                placeholder="Pregunta a NVCode AI..."
+                rows="1"
+                maxlength="4000"
+              ></textarea>
+              <div class="ai-input-actions">
+                <button class="ai-btn-icon" id="ai-btn-attach" title="Adjuntar contexto (@)">@</button>
+                <button class="ai-btn-send" id="ai-btn-send" title="Enviar (Ctrl+Enter)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                  </svg>
+                </button>
+                <button class="ai-btn-stop" id="ai-btn-stop" style="display: none;" title="Detener">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <rect x="6" y="6" width="12" height="12"></rect>
+                  </svg>
+                </button>
               </div>
             </div>
+            <div class="ai-status" id="ai-status"></div>
           </div>
 
           <!-- Vista Historial -->
@@ -233,16 +239,13 @@ export class AIAgent {
         <!-- Menú de contexto (popup) -->
         <div class="ai-context-menu" id="ai-context-menu" style="display: none;">
           <div class="ai-context-item" data-context="active-file">
-            <span class="ai-context-icon">📄</span>
-            <span>Archivo activo</span>
+            <span class="ai-context-icon">📄</span><span>Archivo activo</span>
           </div>
           <div class="ai-context-item" data-context="selection">
-            <span class="ai-context-icon">✂️</span>
-            <span>Selección actual</span>
+            <span class="ai-context-icon">✂️</span><span>Selección actual</span>
           </div>
           <div class="ai-context-item" data-context="project">
-            <span class="ai-context-icon">📁</span>
-            <span>Todo el proyecto</span>
+            <span class="ai-context-icon">📁</span><span>Todo el proyecto</span>
           </div>
         </div>
       </div>
@@ -252,25 +255,21 @@ export class AIAgent {
   renderWelcome() {
     return `
       <div class="ai-welcome">
-        <div class="ai-welcome-icon">🤖</div>
-        <h2 class="ai-welcome-title">Asistente de Código IA</h2>
+        <div class="ai-welcome-icon">⚛</div>
+        <h2 class="ai-welcome-title">NVCode AI</h2>
         <p class="ai-welcome-subtitle">
-          Puedo ayudarte a escribir, editar y analizar código.<br>
-          En modo <strong>Agente</strong> puedo ejecutar acciones directamente en tu proyecto.
+          I'm your intelligent coding assistant. Write natural language queries or use <strong>Agent mode</strong> for autonomous coding execution.
         </p>
         <div class="ai-suggestions">
-          <div class="ai-suggestion-title">Sugerencias rápidas:</div>
-          <button class="ai-suggestion-btn" data-prompt="Explica qué hace este archivo">📖 Explicar archivo</button>
-          <button class="ai-suggestion-btn" data-prompt="Encuentra bugs y sugiere correcciones">🐛 Buscar bugs</button>
-          <button class="ai-suggestion-btn" data-prompt="Refactoriza este código para hacerlo más limpio">♻️ Refactorizar</button>
-          <button class="ai-suggestion-btn" data-prompt="Crea tests unitarios para este código">🧪 Generar tests</button>
-          <button class="ai-suggestion-btn" data-prompt="Documenta este código con JSDoc">📝 Documentar</button>
-          <button class="ai-suggestion-btn" data-prompt="Optimiza el rendimiento de este código">⚡ Optimizar</button>
+          <button class="ai-suggestion-btn" data-prompt="Explain this file">📖 Explain file</button>
+          <button class="ai-suggestion-btn" data-prompt="Find associated bugs">🐛 Find bugs</button>
+          <button class="ai-suggestion-btn" data-prompt="Refactor this code to be cleaner">♻️ Refactor code</button>
+          <button class="ai-suggestion-btn" data-prompt="Generate unit tests">🧪 Generate tests</button>
         </div>
         <div class="ai-shortcuts">
-          <div class="ai-shortcut"><kbd>Ctrl+Enter</kbd> Enviar mensaje</div>
-          <div class="ai-shortcut"><kbd>@</kbd> Adjuntar contexto</div>
-          <div class="ai-shortcut"><kbd>Ctrl+L</kbd> Enviar selección al chat</div>
+          <div class="ai-shortcut"><kbd>Ctrl+Enter</kbd> Send msg</div>
+          <div class="ai-shortcut"><kbd>@</kbd> Attach Context</div>
+          <div class="ai-shortcut"><kbd>Ctrl+L</kbd> Selection to chat</div>
         </div>
       </div>
     `;
@@ -476,6 +475,12 @@ export class AIAgent {
     } else {
       chatView.style.display = 'flex';
       historyView.style.display = 'none';
+    }
+    
+    // Toggle input based on history view
+    const floatingInput = this.container.querySelector('#ai-floating-input');
+    if (floatingInput) {
+      floatingInput.style.display = tab === 'history' ? 'none' : 'flex';
     }
   }
 
@@ -1212,7 +1217,6 @@ export class AIAgent {
   // ==========================================================================
 
   appendMessage(role, text, isStreaming = false) {
-    // Eliminar welcome si existe
     const welcome = this.container.querySelector('.ai-welcome');
     if (welcome) welcome.remove();
     
@@ -1222,20 +1226,20 @@ export class AIAgent {
     
     if (role === 'user') {
       el.innerHTML = `
-        <div class="ai-msg-header">
-          <span class="ai-msg-avatar">👤</span>
-          <span class="ai-msg-role">Tú</span>
+        <div class="ai-msg-bubble">
+          <div class="ai-msg-content">${escapeHtml(text)}</div>
         </div>
-        <div class="ai-msg-content">${escapeHtml(text)}</div>
       `;
     } else {
       el.innerHTML = `
         <div class="ai-msg-header">
-          <span class="ai-msg-avatar">🤖</span>
-          <span class="ai-msg-role">${this.activeTab === 'agent' ? 'Agente' : 'Asistente'}</span>
+          <span class="ai-msg-avatar">⚛</span>
+          <span class="ai-msg-role">NVCode AI</span>
         </div>
-        <div class="ai-msg-content ${isStreaming ? 'streaming' : ''}">
-          ${isStreaming ? '<span class="ai-cursor">▋</span>' : renderMarkdown(text)}
+        <div class="ai-msg-bubble">
+          <div class="ai-msg-content ${isStreaming ? 'streaming' : ''}">
+            ${isStreaming ? '<span class="ai-cursor">▋</span>' : renderMarkdown(text)}
+          </div>
         </div>
       `;
     }
@@ -1261,12 +1265,11 @@ export class AIAgent {
     contentEl.innerHTML = renderMarkdown(text);
     
     // Añadir botones de acción a bloques de código
-    contentEl.querySelectorAll('pre').forEach(pre => {
+    el.querySelectorAll('.ai-code-block').forEach(block => {
+      const pre = block.querySelector('pre');
       const code = pre.querySelector('code')?.textContent || pre.textContent;
-      const lang = pre.querySelector('code')?.className?.replace('language-', '') || '';
-      
-      const actions = document.createElement('div');
-      actions.className = 'ai-code-actions';
+      const actionsContainer = block.querySelector('.ai-code-actions');
+      if (!actionsContainer) return;
       
       // Copiar
       const btnCopy = document.createElement('button');
@@ -1296,7 +1299,7 @@ export class AIAgent {
       // Reemplazar selección
       const btnReplace = document.createElement('button');
       btnReplace.className = 'ai-code-btn ai-code-btn--primary';
-      btnReplace.innerHTML = '✦ Reemplazar selección';
+      btnReplace.innerHTML = '✦ Reemplazar';
       btnReplace.addEventListener('click', () => {
         const editor = this.state.editorInstance;
         if (!editor) return;
@@ -1305,14 +1308,36 @@ export class AIAgent {
           range: selection,
           text: code
         }]);
-        btnReplace.innerHTML = '✓ Reemplazado';
-        setTimeout(() => btnReplace.innerHTML = '✦ Reemplazar selección', 2000);
+        btnReplace.innerHTML = '✓ Listo';
+        setTimeout(() => btnReplace.innerHTML = '✦ Reemplazar', 2000);
       });
       
-      actions.append(btnCopy, btnInsert, btnReplace);
-      pre.style.position = 'relative';
-      pre.appendChild(actions);
+      actionsContainer.append(btnCopy, btnInsert, btnReplace);
     });
+    
+    // Lógica de "Ver más" si el mensaje es muy alto
+    const bubble = el.querySelector('.ai-msg-bubble');
+    if (bubble && contentEl.scrollHeight > 500) {
+      contentEl.classList.add('ai-msg-collapsed');
+      
+      const expandBtn = document.createElement('button');
+      expandBtn.className = 'ai-msg-expand-btn';
+      expandBtn.innerHTML = '🔽 Ver más';
+      
+      expandBtn.addEventListener('click', () => {
+        if (contentEl.classList.contains('ai-msg-collapsed')) {
+          contentEl.classList.remove('ai-msg-collapsed');
+          expandBtn.innerHTML = '🔼 Ver menos';
+        } else {
+          contentEl.classList.add('ai-msg-collapsed');
+          expandBtn.innerHTML = '🔽 Ver más';
+          // Scroll ligero para no perder contexto
+          bubble.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      });
+      
+      bubble.appendChild(expandBtn);
+    }
     
     this.scrollToBottom();
   }

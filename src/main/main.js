@@ -99,6 +99,8 @@ ipcMain.handle('fs:readDir',    async (_, p) => walkDir(p))
 ipcMain.handle('fs:readDirSub', async (_, p) => walkDir(p))
 ipcMain.handle('fs:readFile',   async (_, p) => fs.readFileSync(p, 'utf-8'))
 ipcMain.handle('fs:saveFile',   async (_, p, c) => { fs.writeFileSync(p, c, 'utf-8'); return true })
+ipcMain.handle('fs:copyFile',   async (_, s, d) => { fs.copyFileSync(s, d); return true })
+ipcMain.handle('fs:stat',       async (_, p) => { const st = fs.statSync(p); return { isDirectory: st.isDirectory() } })
 ipcMain.handle('fs:deleteFile', async (_, p) => {
   const stat = fs.statSync(p)
   if (stat.isDirectory()) fs.rmdirSync(p, { recursive: true })
@@ -379,91 +381,42 @@ ipcMain.handle('ai:streamGroq', async (_, { messages, model, apiKey, reqId }) =>
   }
 })
 
-// ── Extension Store ───────────────────────────────────────────────────────────
-const EXTENSIONS_FILE = path.join(app.getPath('userData'), 'extensions.json')
+// ── Extension Store (Marketplace Oficial) ───────────────────────────────────
+const MarketplaceService = require('./marketplace/marketplace-service.js')
+const marketplace = new MarketplaceService()
 
-// Cargar extensiones instaladas
-function loadInstalledExtensions() {
-  try {
-    return JSON.parse(fs.readFileSync(EXTENSIONS_FILE, 'utf-8'))
-  } catch {
-    return []
-  }
-}
+ipcMain.handle('marketplace:search', async (_, query) => {
+  return await marketplace.searchExtensions(query)
+})
 
-// Guardar extensiones instaladas
-function saveInstalledExtensions(extensions) {
-  try {
-    fs.writeFileSync(EXTENSIONS_FILE, JSON.stringify(extensions, null, 2))
-    return true
-  } catch (error) {
-    console.error('Failed to save extensions:', error)
-    return false
-  }
-}
+ipcMain.handle('marketplace:details', async (_, { publisher, name }) => {
+  return await marketplace.getExtensionDetails(publisher, name)
+})
 
-// Instalar extensión
-ipcMain.handle('extensions:install', async (_, { namespace, name, version }) => {
+ipcMain.handle('marketplace:install', async (_, { publisher, name, version }) => {
   try {
-    const installed = loadInstalledExtensions()
-    const extensionId = `${namespace}.${name}`
-    
-    // Verificar si ya está instalada
-    if (installed.find(ext => ext.namespace === namespace && ext.name === name)) {
-      throw new Error('Extension already installed')
-    }
-    
-    // Simular instalación (en producción se descargaría el .vsix)
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    
-    // Añadir a la lista
-    installed.push({
-      namespace,
-      name,
-      version,
-      installedAt: new Date().toISOString()
-    })
-    
-    saveInstalledExtensions(installed)
-    
-    return { success: true, extensionId }
+    const meta = await marketplace.installExtension(publisher, name, version)
+    return { success: true, meta }
   } catch (error) {
     console.error('Failed to install extension:', error)
     throw error
   }
 })
 
-// Desinstalar extensión
-ipcMain.handle('extensions:uninstall', async (_, { namespace, name }) => {
+ipcMain.handle('marketplace:uninstall', async (_, { publisher, name }) => {
   try {
-    const installed = loadInstalledExtensions()
-    const extensionId = `${namespace}.${name}`
-    
-    // Filtrar extensión a desinstalar
-    const filtered = installed.filter(ext => 
-      !(ext.namespace === namespace && ext.name === name)
-    )
-    
-    if (filtered.length === installed.length) {
-      throw new Error('Extension not found')
-    }
-    
-    saveInstalledExtensions(filtered)
-    
-    return { success: true, extensionId }
+    const result = await marketplace.uninstallExtension(publisher, name)
+    return { success: true, result }
   } catch (error) {
     console.error('Failed to uninstall extension:', error)
     throw error
   }
 })
 
-// Obtener lista de extensiones instaladas
-ipcMain.handle('extensions:getInstalled', async () => {
-  try {
-    const installed = loadInstalledExtensions()
-    return installed.map(ext => `${ext.namespace}.${ext.name}`)
-  } catch (error) {
-    console.error('Failed to get installed extensions:', error)
-    return []
-  }
+ipcMain.handle('marketplace:installed', async () => {
+  return await marketplace.getInstalledExtensions()
+})
+
+ipcMain.handle('marketplace:check-updates', async () => {
+  return await marketplace.checkUpdates()
 })

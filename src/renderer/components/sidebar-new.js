@@ -4,7 +4,7 @@
  * Reemplaza al sidebar.js original
  */
 import { FileManager } from './file-manager.js'
-import { ExtensionStore } from './extensions-store.js'
+import { ExtensionsPanel } from './ExtensionsPanel.js'
 
 export function createSidebar(container, state) {
   let fileManager = null
@@ -85,7 +85,7 @@ export function createSidebar(container, state) {
       const host = document.getElementById('ext-store-host')
       if (host) {
         try {
-          extStoreInstance = new ExtensionStore(host, state)
+          extStoreInstance = new ExtensionsPanel(host, state)
           extStoreInstance.mount()
         } catch (error) {
           console.error('Failed to initialize ExtensionStore:', error)

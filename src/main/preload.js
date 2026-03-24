@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('api', {
   readDirSub:    (p)       => ipcRenderer.invoke('fs:readDirSub', p),
   readFile:      (p)       => ipcRenderer.invoke('fs:readFile', p),
   saveFile:      (p, c)    => ipcRenderer.invoke('fs:saveFile', p, c),
+  copyFile:      (s, d)    => ipcRenderer.invoke('fs:copyFile', s, d),
+  stat:          (p)       => ipcRenderer.invoke('fs:stat', p),
   deleteFile:    (p)       => ipcRenderer.invoke('fs:deleteFile', p),
   rename:        (o, n)    => ipcRenderer.invoke('fs:rename', o, n),
   createFile:    (p)       => ipcRenderer.invoke('fs:createFile', p),
@@ -78,11 +80,11 @@ contextBridge.exposeInMainWorld('api', {
   aiStreamGroq: (msgs, model, apiKey, reqId) => 
     ipcRenderer.invoke('ai:streamGroq', { messages: msgs, model, apiKey, reqId }),
 
-  // Extension Store API
-  installExtension: (namespace, name, version) => 
-    ipcRenderer.invoke('extensions:install', { namespace, name, version }),
-  uninstallExtension: (namespace, name) => 
-    ipcRenderer.invoke('extensions:uninstall', { namespace, name }),
-  getInstalledExtensions: () => 
-    ipcRenderer.invoke('extensions:getInstalled'),
+  // Extension Store API (Marketplace)
+  marketplaceSearch: (query) => ipcRenderer.invoke('marketplace:search', query),
+  marketplaceDetails: (publisher, name) => ipcRenderer.invoke('marketplace:details', { publisher, name }),
+  marketplaceInstall: (publisher, name, version) => ipcRenderer.invoke('marketplace:install', { publisher, name, version }),
+  marketplaceUninstall: (publisher, name) => ipcRenderer.invoke('marketplace:uninstall', { publisher, name }),
+  marketplaceInstalled: () => ipcRenderer.invoke('marketplace:installed'),
+  marketplaceCheckUpdates: () => ipcRenderer.invoke('marketplace:check-updates'),
 })

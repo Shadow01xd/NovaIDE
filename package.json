@@ -1,7 +1,7 @@
 {
-  "name": "myide",
+  "name": "nvcode",
   "version": "0.2.0",
-  "description": "IDE personalizado con IA estilo Cursor",
+  "description": "IDE personalizado con IA integrado y herramientas top tier",
   "main": "src/main/main.js",
   "scripts": {
     "dev": "concurrently -k -n VITE,ELECTRON -c cyan,yellow \"npm run dev:renderer\" \"npm run dev:electron\"",
@@ -18,17 +18,34 @@
     "wait-on": "^7.2.0"
   },
   "dependencies": {
-    "node-pty": "^1.0.0"
+    "axios": "^1.13.6",
+    "fs-extra": "^11.3.4",
+    "node-pty": "^1.0.0",
+    "vscode-marketplace-client": "^1.1.1",
+    "yauzl": "^3.2.1"
   },
   "build": {
-    "appId": "com.miequipo.myide",
-    "productName": "MyIDE",
+    "appId": "com.nvcode.app",
+    "productName": "NVCode",
     "asar": true,
-    "directories": { "output": "dist-app" },
-    "files": ["src/main/**/*", "dist/renderer/**/*"],
-    "win": { "target": "nsis" },
-    "mac": { "target": "dmg" },
-    "linux": { "target": "AppImage" },
-    "electronRebuild": { "buildFromSource": true }
+    "directories": {
+      "output": "dist-app"
+    },
+    "files": [
+      "src/main/**/*",
+      "dist/renderer/**/*"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    },
+    "electronRebuild": {
+      "buildFromSource": true
+    }
   }
 }

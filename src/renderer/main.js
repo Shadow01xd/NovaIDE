@@ -6,6 +6,8 @@ import { createSidebar }       from './components/sidebar-new.js'
 import { createAIAgent }       from './components/ai-agent.js'
 import { createTerminalPanel } from './components/terminal.js'
 import { createStatusBar }     from './components/statusbar.js'
+import { createExtensionsPanel } from './components/ExtensionsPanel.js'
+import { DragAndDropManager }  from './components/drag-drop.js'
 
 // Cargar settings guardados
 const savedSettings = await window.api.getSettings()
@@ -44,9 +46,9 @@ function buildWelcome() {
   // Nota: no uses backticks dentro de este string — usa entidades HTML si hace falta
   return `
     <div class="welcome-inner">
-      <div class="welcome-logo">&#10022;</div>
-      <h1 class="welcome-title">MyIDE</h1>
-      <p class="welcome-sub">Tu IDE personal con IA integrada</p>
+      <div class="welcome-logo">⚛</div>
+      <h1 class="welcome-title">NVCode</h1>
+      <p class="welcome-sub">The Next Generation AI IDE</p>
       <div class="welcome-actions">
         <button class="welcome-btn" id="wb-open">&#128193; Abrir carpeta</button>
         <button class="welcome-btn" id="wb-new">&#128196; Nuevo archivo</button>
@@ -69,6 +71,9 @@ const editor = await createEditor(document.getElementById('editor'), state)
 window.__editorInstance = editor
 createAIAgent(document.getElementById('ai-panel'), state)
 createStatusBar(document.getElementById('statusbar'), state)
+
+// ── Drag and Drop Manager ────────────────────────────────────────────────────
+new DragAndDropManager(state)
 
 // ── Aplicar anchos guardados ───────────────────────────────────────────────────
 document.getElementById('sidebar').style.width = state.sidebarWidth + 'px'
