@@ -122,6 +122,7 @@ export async function createEditor(container, state, themeMgr = null) {
 
   // ── Proveedor de autocompletado con IA ────────────────────────────────
   registerInlineGhostProviders(monaco, state)
+  registerHtmlSnippetCompletions(monaco)
 
   // ── Comandos de prueba para Ghost Text ────────────────────────────────────
   // Trigger manual con Ctrl+Shift+I para debug
@@ -718,6 +719,7 @@ function registerInlineGhostProviders(monaco, state) {
 
           // Debounce más corto para mayor agresividad
           return new Promise((resolve) => {
+            const debounceMs = model.getLanguageId() === 'html' ? 220 : 150
             debounceTimer = setTimeout(async () => {
               try {
                 if (token.isCancellationRequested) {
@@ -727,19 +729,20 @@ function registerInlineGhostProviders(monaco, state) {
 
                 const totalText = model.getValue()
                 const offset = model.getOffsetAt(position)
+                const language = model.getLanguageId()
 
                 // Contexto ampliado para mejor IA
-                const contextSize = 4000 // Aumentado
+                const contextSize = language === 'html' ? 6500 : 4000
+                const suffixLen = language === 'html' ? 1200 : 800
                 const prefix = totalText.slice(Math.max(0, offset - contextSize), offset)
-                const suffix = totalText.slice(offset, Math.min(totalText.length, offset + 800))
+                const suffix = totalText.slice(offset, Math.min(totalText.length, offset + suffixLen))
 
-                const language = model.getLanguageId()
                 const filePath = state.currentFile || ''
 
                 // Contexto extendido - más líneas
                 const currentLineNum = position.lineNumber
-                const startLine = Math.max(1, currentLineNum - 25) // Aumentado
-                const endLine = Math.min(model.getLineCount(), currentLineNum + 15) // Aumentado
+                const startLine = Math.max(1, currentLineNum - 45)
+                const endLine = Math.min(model.getLineCount(), currentLineNum + 28)
                 
                 let extendedContext = ''
                 for (let i = startLine; i <= endLine; i++) {
@@ -768,6 +771,8 @@ function registerInlineGhostProviders(monaco, state) {
 
                 console.log('[Ghost Text] Calling AI with extended context...')
 
+                const structuralContext = buildStructuralContext(model, position, language)
+
                 const suggestion = await withTimeout(
                   window.api.aiInlineComplete({
                     model: aiModel,
@@ -778,6 +783,7 @@ function registerInlineGhostProviders(monaco, state) {
                     filePath,
                     currentLine: currentLineNum,
                     beforeCursor,
+                    structuralContext,
                     apiKey,
                   }),
                   15000 // 15 segundos para respuestas largas de IA
@@ -839,7 +845,13 @@ function registerInlineGhostProviders(monaco, state) {
                 }
 
                 // Sanitización mejorada
-                const cleaned = sanitizeInlineCompletion(suggestion, beforeCursor, language)
+                const cleaned = sanitizeInlineCompletion(
+                  suggestion,
+                  beforeCursor,
+                  language,
+                  suffix,
+                  structuralContext
+                )
                 if (!cleaned || cleaned.trim().length === 0) {
                   console.log('[Ghost Text] Sanitization returned empty')
                   resolve({ items: [], dispose() {} })
@@ -876,7 +888,7 @@ function registerInlineGhostProviders(monaco, state) {
                 console.error('[Ghost Text] Error:', err)
                 resolve({ items: [], dispose() {} })
               }
-            }, 150) // Reducido a 150ms para mayor agresividad
+            }, debounceMs) // HTML: un poco más de debounce para alinear con sugerencias del editor
           })
 
         } catch (err) {
@@ -894,7 +906,68 @@ function registerInlineGhostProviders(monaco, state) {
   }
 }
 
-function sanitizeInlineCompletion(suggestion, prefix = '') {
+// ── HTML snippets estilo Emmet básico ────────────────────────────────────
+function registerHtmlSnippetCompletions(monaco) {
+  const htmlSnippets = {
+    html: '<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n  <title>$1</title>\n</head>\n<body>\n  $0\n</body>\n</html>',
+    p: '<p>$0</p>',
+    div: '<div>$0</div>',
+    span: '<span>$0</span>',
+    h1: '<h1>$0</h1>',
+    h2: '<h2>$0</h2>',
+    h3: '<h3>$0</h3>',
+    ul: '<ul>\n  <li>$0</li>\n</ul>',
+    ol: '<ol>\n  <li>$0</li>\n</ol>',
+    li: '<li>$0</li>',
+    a: '<a href="$1">$0</a>',
+    img: '<img src="$1" alt="$0" />',
+    button: '<button type="button">$0</button>',
+    input: '<input type="$1" name="$2" id="$0" />',
+    section: '<section>\n  $0\n</section>',
+    article: '<article>\n  $0\n</article>',
+    header: '<header>\n  $0\n</header>',
+    footer: '<footer>\n  $0\n</footer>',
+    main: '<main>\n  $0\n</main>',
+    nav: '<nav>\n  $0\n</nav>',
+    form: '<form action="$1" method="$2">\n  $0\n</form>',
+    label: '<label for="$1">$0</label>',
+    textarea: '<textarea name="$1" id="$2" rows="4" cols="50">$0</textarea>',
+    script: '<script>\n  $0\n</script>',
+    style: '<style>\n  $0\n</style>',
+  }
+
+  monaco.languages.registerCompletionItemProvider('html', {
+    triggerCharacters: ['<', ' ', '.', '#'],
+    provideCompletionItems(model, position) {
+      const word = model.getWordUntilPosition(position)
+      const range = new monaco.Range(
+        position.lineNumber,
+        word.startColumn,
+        position.lineNumber,
+        word.endColumn
+      )
+
+      const suggestions = Object.entries(htmlSnippets).map(([key, value]) => ({
+        label: key,
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        insertText: value,
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        documentation: `Snippet HTML para <${key}>`,
+        range,
+      }))
+
+      return { suggestions }
+    },
+  })
+}
+
+function sanitizeInlineCompletion(
+  suggestion,
+  beforeCursor = '',
+  language = 'plaintext',
+  suffix = '',
+  structuralContext = null
+) {
   if (!suggestion) return ''
 
   console.log('[editor] sanitizeInlineCompletion input:', suggestion.substring(0, 100))
@@ -924,13 +997,306 @@ function sanitizeInlineCompletion(suggestion, prefix = '') {
       .trim()
   }
 
+  // El modelo a veces repite desde el inicio de la frase aunque ya esté escrita
+  // (ej. antes "viajes a g" y sugiere "viajes a Guatemala" → debe quedar "uatemala").
+  cleaned = stripLeadingOverlapWithBeforeCursor(cleaned, beforeCursor)
+  if (!cleaned.trim()) return ''
+
   // Evitar duplicar el prefijo
-  if (prefix.endsWith(cleaned.substring(0, 50))) {
+  if (beforeCursor.endsWith(cleaned.substring(0, Math.min(50, cleaned.length)))) {
     return ''
+  }
+
+  // Evitar insertar texto que ya está inmediatamente después del cursor.
+  // Esto reduce duplicados típicos como </title></title> o llaves dobles.
+  cleaned = stripOverlapWithSuffix(cleaned, suffix)
+  if (!cleaned.trim()) return ''
+  if (String(suffix).startsWith(cleaned)) return ''
+
+  // En HTML, evitar que cierre repetido de tags ensucie la estructura.
+  if (language === 'html' && /^<\/[a-zA-Z][\w-]*>\s*$/.test(cleaned) && suffix.trim().startsWith(cleaned.trim())) {
+    return ''
+  }
+
+  if (language === 'html') {
+    cleaned = enforceStrictHtmlSuggestion(cleaned, beforeCursor, suffix, structuralContext)
+    if (!cleaned.trim()) return ''
+    cleaned = ensureHtmlTextWordSpacing(beforeCursor, cleaned, structuralContext)
+    if (!cleaned.trim()) return ''
   }
 
   console.log('[editor] sanitizeInlineCompletion output:', cleaned.substring(0, 100))
   return cleaned
+}
+
+function stripOverlapWithSuffix(text, suffix = '') {
+  if (!text || !suffix) return text
+  const normalizedSuffix = String(suffix)
+  const max = Math.min(text.length, normalizedSuffix.length)
+
+  for (let overlap = max; overlap > 0; overlap--) {
+    const endPart = text.slice(-overlap)
+    const startPart = normalizedSuffix.slice(0, overlap)
+    if (endPart === startPart) {
+      return text.slice(0, -overlap)
+    }
+  }
+  return text
+}
+
+/**
+ * Si el final de beforeCursor coincide con el inicio de la sugerencia (p. ej. parcial
+ * "… g" + "Guatemala" con solapamiento "viajes a g" / "viajes a G…"), recorta el duplicado.
+ * Comparación sin distinguir mayúsculas para palabras en español/inglés.
+ */
+function stripLeadingOverlapWithBeforeCursor(suggestion, beforeCursor) {
+  if (!suggestion || !beforeCursor) return suggestion
+  const a = String(beforeCursor)
+  const s = String(suggestion)
+  const max = Math.min(a.length, s.length)
+  let best = 0
+  for (let i = max; i >= 1; i--) {
+    if (a.slice(-i).toLowerCase() === s.slice(0, i).toLowerCase()) {
+      // Evitar solapar solo 1 carácter entre dos letras distintas (p. ej. "… j" + "America"
+      // no debe consumir "J" y dejar "america" pegado a "j" → "jamerica").
+      if (i === 1 && /[a-zA-ZáéíóúÁÉÍÓÚñÑ]$/.test(a) && /^[a-zA-ZáéíóúÁÉÍÓÚñÑ]/.test(s)) {
+        const ac = a.slice(-1).toLowerCase()
+        const sc = s.slice(0, 1).toLowerCase()
+        if (ac !== sc) continue
+      }
+      best = i
+      break
+    }
+  }
+  return best ? s.slice(best) : s
+}
+
+/** Etiquetas donde el ghost text suele completar prosa (no solo markup). */
+const HTML_TEXT_PARENT_TAGS = new Set([
+  'p', 'span', 'div', 'li', 'td', 'th', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+  'title', 'label', 'button', 'a', 'strong', 'em', 'b', 'i', 'small', 'figcaption', 'blockquote',
+])
+
+/** Palabras cortas tras las que casi siempre sigue otra palabra nueva (español/inglés básico). */
+const HTML_SPACING_STOPWORDS = new Set([
+  'un', 'una', 'unas', 'unos', 'el', 'la', 'los', 'las', 'lo', 'al', 'del', 'de', 'y', 'e', 'o', 'u',
+  'en', 'con', 'por', 'para', 'que', 'quien', 'cuando', 'donde', 'como', 'sin', 'sobre', 'entre',
+  'hacia', 'hasta', 'desde', 'durante', 'mi', 'tu', 'su', 'mis', 'tus', 'sus', 'me', 'te', 'se', 'le', 'les',
+  'nuestro', 'nuestra', 'este', 'esta', 'estos', 'estas', 'ese', 'esa', 'esos', 'esas', 'aquello', 'muy', 'mas', 'más',
+  'tan', 'tanto', 'todo', 'toda', 'todos', 'todas', 'algo', 'nada', 'the', 'a', 'an', 'and', 'or', 'of', 'to', 'in', 'on', 'for', 'with', 'from', 'by', 'at', 'as', 'is', 'are', 'was', 'were', 'be', 'been', 'my', 'your', 'his', 'her', 'its', 'our', 'their',
+])
+
+function getLastTextTokenBeforeCursor(beforeCursor) {
+  const t = String(beforeCursor).trimEnd()
+  const m = t.match(/([^\s<>]+)$/)
+  if (!m) return ''
+  return m[1].replace(/[.,;:!?)\]}'"»«]+$/, '')
+}
+
+function firstWordOrTagFragment(s) {
+  const t = String(s).trimStart()
+  if (t.startsWith('<')) return { isTag: true, word: '' }
+  const m = t.match(/^([^\s<]+)/)
+  return { isTag: false, word: (m && m[1]) ? m[1].replace(/^[,;:.]+/, '') : '' }
+}
+
+/**
+ * Inserta espacio entre palabras en contenido HTML cuando el modelo olvida el separador
+ * ("… de un" + "texto" → "… un texto") o cuando una sola letra + nombre propio en Title Case.
+ */
+function ensureHtmlTextWordSpacing(beforeCursor, cleaned, structuralContext) {
+  if (!cleaned || !beforeCursor) return cleaned
+  if (!structuralContext?.inElementContent) return cleaned
+  const top = String(structuralContext.openHtmlTags?.[structuralContext.openHtmlTags.length - 1] || '').toLowerCase()
+  if (!HTML_TEXT_PARENT_TAGS.has(top)) return cleaned
+
+  const b = String(beforeCursor)
+  let s = String(cleaned)
+  const { isTag, word: firstW } = firstWordOrTagFragment(s)
+  if (isTag || !firstW) return cleaned
+  if (/\s$/.test(b) || /^\s/.test(s)) return cleaned
+  if (!/[\w\u00c0-\u024fñÑ]$/.test(b)) return cleaned
+
+  const lastTok = getLastTextTokenBeforeCursor(b)
+  if (!lastTok) return cleaned
+  const lt = lastTok.toLowerCase()
+  const fw = firstW.toLowerCase()
+
+  // Continuación de la misma palabra (prefijo ya escrito)
+  if (fw.startsWith(lt) && lt.length >= 2 && fw.length > lt.length) return cleaned
+
+  if (HTML_SPACING_STOPWORDS.has(lt)) return ' ' + s
+
+  // "creacion de" + "un texto" o "… de" + "un …": la primera palabra sugerida es artículo/preposición
+  if (HTML_SPACING_STOPWORDS.has(fw)) return ' ' + s
+
+  // Una letra minúscula + palabra que empieza en mayúscula (nombre propio): suele ser palabra nueva
+  if (lastTok.length === 1 && /^[a-záéíóúñ]$/i.test(lastTok) && /^[A-ZÁÉÍÓÚÑ]/.test(firstW)) return ' ' + s
+
+  return cleaned
+}
+
+function buildStructuralContext(model, position, language) {
+  const currentLineText = model.getLineContent(position.lineNumber)
+  const col = Math.max(0, position.column - 1)
+  const lineBeforeCursor = currentLineText.slice(0, col)
+  const lineAfterCursor = currentLineText.slice(col)
+  const previousNonEmptyLine = getNearestNonEmptyLine(model, position.lineNumber, -1)
+  const nextNonEmptyLine = getNearestNonEmptyLine(model, position.lineNumber, 1)
+  const indent = currentLineText.match(/^\s*/)?.[0] || ''
+
+  const context = {
+    language,
+    currentLineText,
+    lineBeforeCursor: lineBeforeCursor.slice(-140),
+    lineAfterCursor: lineAfterCursor.slice(0, 140),
+    previousNonEmptyLine,
+    nextNonEmptyLine,
+    indentSize: indent.length,
+  }
+
+  if (language === 'html') {
+    const offset = model.getOffsetAt(position)
+    const textBefore = model.getValue().slice(0, offset)
+    const openStack = getOpenHtmlTags(textBefore).slice(-14)
+    context.openHtmlTags = openStack
+    context.openTagsChain = openStack.length ? openStack.join(' > ') : ''
+    const inOpeningTag = isInsideOpeningTag(textBefore)
+    context.inOpeningTag = inOpeningTag
+    context.inElementContent = openStack.length > 0 && !inOpeningTag
+    context.inTag = inOpeningTag
+    const top = openStack[openStack.length - 1] || ''
+    if (top && context.inElementContent) {
+      context.completeWithHint = `Dentro de <${top}>: continuar texto o cerrar con </${top}> si corresponde; no anidar otro <${top}>.`
+    }
+    if (top && inOpeningTag) {
+      context.completeWithHint = `Dentro de la apertura de <${top}>: completar atributos o el >; no repetir <${top}>.`
+    }
+  }
+
+  return context
+}
+
+/** True si el cursor está entre el último '<' y el siguiente '>' (atributos / nombre de etiqueta). */
+function isInsideOpeningTag(textBefore) {
+  const lastLt = textBefore.lastIndexOf('<')
+  if (lastLt === -1) return false
+  const frag = textBefore.slice(lastLt)
+  return !frag.includes('>')
+}
+
+function getNearestNonEmptyLine(model, fromLine, direction) {
+  const lineCount = model.getLineCount()
+  let line = fromLine + direction
+  while (line >= 1 && line <= lineCount) {
+    const text = model.getLineContent(line).trim()
+    if (text) return text
+    line += direction
+  }
+  return ''
+}
+
+function getOpenHtmlTags(text) {
+  const tags = []
+  const tagPattern = /<\/?([a-zA-Z][\w-]*)\b[^>]*>/g
+  const voidTags = new Set(['area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'])
+  let m
+  while ((m = tagPattern.exec(text)) !== null) {
+    const full = m[0]
+    const name = m[1].toLowerCase()
+    const isClosing = full.startsWith('</')
+    const isSelfClosing = full.endsWith('/>') || voidTags.has(name)
+    if (!isClosing && !isSelfClosing) {
+      tags.push(name)
+    } else if (isClosing) {
+      for (let i = tags.length - 1; i >= 0; i--) {
+        if (tags[i] === name) {
+          tags.splice(i, 1)
+          break
+        }
+      }
+    }
+  }
+  return tags
+}
+
+function enforceStrictHtmlSuggestion(suggestion, prefix, suffix, structuralContext) {
+  let out = suggestion
+  const safePrefix = String(prefix || '')
+  const safeSuffix = String(suffix || '')
+  const topOpenTag = structuralContext?.openHtmlTags?.[structuralContext.openHtmlTags.length - 1] || ''
+  const inElement = structuralContext?.inElementContent === true
+
+  // Solo permitir documento completo al inicio del archivo.
+  if (/<!DOCTYPE|<html\b/i.test(out) && safePrefix.trim().length > 0) {
+    return ''
+  }
+
+  // Dentro del contenido de una etiqueta: no sugerir otra apertura del mismo tag (ej. <a> dentro de <a>).
+  if (inElement && topOpenTag) {
+    const reOpenSame = new RegExp(`^\\s*<${topOpenTag}\\b[^>]*>`, 'i')
+    out = out.replace(reOpenSame, '').trim()
+    const dupClose = new RegExp(`(</${topOpenTag}>\\s*){2,}`, 'gi')
+    out = out.replace(dupClose, `</${topOpenTag}>`)
+    const sandwiched = new RegExp(`</${topOpenTag}>\\s*<${topOpenTag}\\b[^>]*>`, 'gi')
+    out = out.replace(sandwiched, `</${topOpenTag}>`)
+  }
+
+  // Si estamos escribiendo dentro de una etiqueta, preferir sugerencias de una sola línea.
+  if (structuralContext?.inTag || structuralContext?.inOpeningTag) {
+    out = out.split('\n')[0].trim()
+  }
+
+  // Si la sugerencia solo cierra una etiqueta distinta al tope, descartarla.
+  const closeOnly = out.trim().match(/^<\/([a-zA-Z][\w-]*)>\s*$/)
+  if (closeOnly) {
+    const closeTag = closeOnly[1].toLowerCase()
+    if (topOpenTag && closeTag !== String(topOpenTag).toLowerCase()) {
+      return ''
+    }
+    if (safeSuffix.trimStart().startsWith(out.trim())) {
+      return ''
+    }
+  }
+
+  // Nunca cerrar secciones mayores desde ghost text normal
+  // (evita casos como </body></html> cuando solo querías otro <p>).
+  out = out
+    .replace(/<\/head>\s*$/i, '')
+    .replace(/<\/body>\s*$/i, '')
+    .replace(/<\/html>\s*$/i, '')
+
+  // Si intenta inyectar cierres mayores en medio del texto, cortar ahí.
+  const majorCloseIdx = out.search(/<\/(?:head|body|html)>/i)
+  if (majorCloseIdx >= 0) {
+    out = out.slice(0, majorCloseIdx).trim()
+  }
+
+  // Evitar que meta un nuevo documento o <body>/<head> dentro de contenido.
+  if (safePrefix.trim().length > 0 && /<(?:html|head|body)\b/i.test(out)) {
+    return ''
+  }
+
+  // Cuando hay un tag abierto concreto (ej. p, li, div), priorizar solo ese bloque.
+  if (topOpenTag) {
+    const closingTag = `</${topOpenTag}>`
+    const closePos = out.toLowerCase().indexOf(closingTag.toLowerCase())
+    if (closePos >= 0) {
+      const afterClose = out.slice(closePos + closingTag.length).trim()
+      // Si después del cierre quiere agregar más bloques, recortamos.
+      if (afterClose) {
+        out = out.slice(0, closePos + closingTag.length)
+      }
+    }
+  }
+
+  // Evitar bloques enormes en ghost text HTML si no son explícitamente un documento.
+  const lineCount = out.split('\n').length
+  if (lineCount > 8 && !/^(\s*html|\s*htm)\s*$/i.test(safePrefix.trim())) {
+    out = out.split('\n').slice(0, 8).join('\n')
+  }
+
+  return out.trim()
 }
 
 // Función helper para detectar si estamos en un string

@@ -103,7 +103,7 @@ ipcMain.handle('fs:exists',     async (_, p) => fs.existsSync(p))
 // ── AI Inline Completion (Universal) ──────────────────────────────────────────
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json')
 
-function buildInlinePrompt({ prefix, suffix, language, filePath, extendedContext, currentLine, beforeCursor }) {
+function buildInlinePrompt({ prefix, suffix, language, filePath, extendedContext, currentLine, beforeCursor, structuralContext }) {
   // Sistema inteligente según lenguaje y contexto
   const isHTML = language === 'html'
   const isJavaScript = language === 'javascript' || language === 'typescript'
@@ -121,6 +121,10 @@ PRINCIPIOS FUNDAMENTALES:
 5. Para otros lenguajes: da continuaciones lógicas con múltiples líneas si es necesario
 6. NUNCA expliques lo que haces, solo da el código
 7. Mantén la sintaxis y estilo del lenguaje
+8. NUNCA dupliques texto que ya existe después del cursor
+9. Si el sufijo ya contiene cierres/tags, evita repetirlos
+10. Para HTML, respeta jerarquía de etiquetas abiertas/cerradas
+11. La continuación empieza EXACTAMENTE donde terminó el cursor: no repitas palabras ni frases que ya estén en la misma línea antes del cursor (incl. si el usuario dejó una palabra a medias)
 
 CONTEXTO COMPLETO: Usa todo el contexto del archivo para sugerencias inteligentes.
 SALTOS DE LÍNEA: Son válidos y necesarios para código multilinea.
@@ -140,22 +144,35 @@ Archivo: ${filePath || 'sin-nombre'}
 Lenguaje: ${language}
 Línea actual: ${currentLine}
 
-=== CÓDIGO ANTES DEL CURSOR (últimos 2000 caracteres) ===
+=== CÓDIGO ANTES DEL CURSOR (ventana reciente) ===
 ${prefix}
 
-=== CÓDIGO DESPUÉS DEL CURSOR (próximos 500 caracteres) ===
+=== CÓDIGO DESPUÉS DEL CURSOR (ventana reciente) ===
 ${suffix}
 
 === TEXTO INMEDIATAMENTE ANTES DEL CURSOR ===
 "${beforeCursor}"
 
-=== ANÁLISIS DE CONTEXTO ===
-${extendedContext ? 'Contexto extendido disponible' : 'Sin contexto extendido'}
+=== VENTANA LOCAL (líneas alrededor del cursor) ===
+${typeof extendedContext === 'string' && extendedContext.trim().length > 0
+  ? extendedContext.trim().slice(-5500)
+  : '(sin ventana local; usa prefix/suffix)'}
+
+=== CONTEXTO ESTRUCTURAL (JSON) ===
+${structuralContext ? JSON.stringify(structuralContext, null, 2) : 'Sin contexto estructural'}
 
 === TAREA ===
 Basado en el análisis completo del contexto, proporciona la continuación lógica y natural del código.
 
-${isHTML ? 'Si es "html" o "htm", proporciona el documento HTML completo y moderno.' : 'Proporciona la continuación lógica del código.'}
+${isHTML ? 'Si es "html" o "htm", proporciona el documento HTML completo y moderno. En otros casos HTML, completa sin duplicar etiquetas o cierres que ya estén en el sufijo.' : 'Proporciona la continuación lógica del código.'}
+
+${isHTML ? `MODO HTML ESTRICTO:
+- Si structuralContext.inElementContent es true: estás dentro del CONTENIDO de una etiqueta ya abierta (no abras otra etiqueta del mismo nombre; ej. no pongas <a> si ya hay un <a> abierto: solo continúa el texto y luego un solo </a> si falta).
+- Si structuralContext.inOpeningTag es true: completa atributos o el cierre > de esa etiqueta, sin abrir etiquetas nuevas innecesarias.
+- Una sola línea de continuación salvo que el contexto pida varias líneas claras.
+- PROSA EN ESPAÑOL (p, h1–h6, span, li…): respeta espacios entre palabras; tras artículos/preposiciones (un, una, el, la, de, y, a, en, con, por, para) la siguiente palabra va separada. No pegues palabras ("de untexto" está mal; debe ser "de un texto").
+- Si el usuario escribe frases tipo "viajes a …" o "enlace a …", prioriza: (1) nombre de lugar o continuación natural en español, o (2) un <a href="URL_REAL"> con URL creíble — evita href="" vacío salvo que el sufijo ya lo tenga.
+- Si solo falta cerrar la etiqueta de texto, sugiere </p> (o el cierre correcto del openTagsChain) sin relleno innecesario.` : ''}
 
 ${isJavaScript ? 'Para JavaScript, usa sintaxis moderna y buenas prácticas.' : ''}
 ${isPython ? 'Para Python, sigue PEP8 y usa tipado cuando sea apropiado.' : ''}
@@ -216,24 +233,12 @@ function sanitizeInlineText(text) {
       .replace(/^\s+|\s+$/g, '') // Limpiar inicio y fin
       .trim()
   } else if (/<[^>]*>/g.test(out)) {
-    // Para fragmentos HTML, limpiar etiquetas pero mantener el texto
-    console.warn('[sanitizeInlineText] HTML fragment detected, cleaning tags')
+    // Para fragmentos HTML, preservar etiquetas y estructura.
+    // Si quitamos tags, el ghost text queda inútil para autocomplete HTML.
+    console.log('[sanitizeInlineText] HTML fragment detected, preserving tags')
     out = out
-      .replace(/<!DOCTYPE[^>]*>/gi, '')
-      .replace(/<html[^>]*>/gi, '')
-      .replace(/<\/html>/gi, '')
-      .replace(/<head[^>]*>/gi, '')
-      .replace(/<\/head>/gi, '')
-      .replace(/<title[^>]*>/gi, '')
-      .replace(/<\/title>/gi, '')
-      .replace(/<meta[^>]*>/gi, '')
-      .replace(/<link[^>]*>/gi, '')
-      .replace(/<script[^>]*>/gi, '')
-      .replace(/<\/script>/gi, '')
-      .replace(/<body[^>]*>/gi, '')
-      .replace(/<\/body>/gi, '')
-      .replace(/<[^>]*>/g, '')
-      .replace(/\s+/g, ' ')
+      .replace(/\n\s*\n/g, '\n')
+      .replace(/^\s+|\s+$/g, '')
       .trim()
   } else {
     // Para código normal, PRESERVAR estructura y saltos de línea
