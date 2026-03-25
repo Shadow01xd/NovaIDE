@@ -720,6 +720,7 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
 
   // Ollama corre en localhost — fetch directo desde renderer funciona sin CORS
   async streamOllama(messages, onToken, signal) {
+    return await this._streamViaIPC('ollama', messages, onToken, signal);
     const res = await fetch('http://localhost:11434/api/chat', {
       method:'POST', signal,
       headers:{'Content-Type':'application/json'},
@@ -752,24 +753,46 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
     const reqId = this.reqCounter; // ya fue incrementado antes
     return new Promise((resolve, reject) => {
       let cleanup;
+      let settled = false;
+
+      const finishResolve = () => {
+        if (settled) return;
+        settled = true;
+        cleanup?.();
+        resolve();
+      };
+
+      const finishReject = (error) => {
+        if (settled) return;
+        settled = true;
+        cleanup?.();
+        reject(error);
+      };
 
       const handler = (data) => {
         if (data.reqId !== reqId) return;
-        if (signal?.aborted) { cleanup(); resolve(); return; }
-        if (data.error)      { cleanup(); reject(new Error(data.error)); return; }
-        if (data.done)       { cleanup(); resolve(); return; }
+        if (signal?.aborted) { finishResolve(); return; }
+        if (data.error)      { finishReject(new Error(data.error)); return; }
+        if (data.done)       { finishResolve(); return; }
         if (data.token)      onToken(data.token);
       };
 
       cleanup = window.api.onAiToken(handler);
-      signal?.addEventListener('abort', () => { cleanup(); resolve(); });
+      signal?.addEventListener('abort', () => finishResolve());
 
       // Invocar el handler IPC (no await — los tokens llegan por evento)
-      if (provider === 'deepseek') {
-        window.api.aiStreamDeepSeek(messages, this.activeModel, this.deepseekApiKey, reqId);
+      let streamPromise;
+      if (provider === 'ollama') {
+        streamPromise = window.api.aiStream(messages, this.activeModel, reqId);
+      } else if (provider === 'deepseek') {
+        streamPromise = window.api.aiStreamDeepSeek(messages, this.activeModel, this.deepseekApiKey, reqId);
       } else {
-        window.api.aiStreamGroq(messages, this.activeModel, this.groqApiKey, reqId);
+        streamPromise = window.api.aiStreamGroq(messages, this.activeModel, this.groqApiKey, reqId);
       }
+
+      Promise.resolve(streamPromise).catch((err) => {
+        finishReject(err instanceof Error ? err : new Error(String(err)));
+      });
     });
   }
 
@@ -785,7 +808,7 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
 
   parseToolCalls(text) {
     // Eliminar bloques de código para evitar falsos positivos
-    const stripped = text.replace(/```[\s\S]*?```/g,'').replace(/`[^`\n]+`/g,'');
+    const stripped = this.normalizeToolCallText(text);
     const calls = [];
     const seen  = new Set();
     let i = 0;
@@ -823,19 +846,28 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
     return calls;
   }
 
+  normalizeToolCallText(text) {
+    if (!text) return '';
+    return String(text)
+      .replace(/```(?:json)?\s*([\s\S]*?)```/gi, '\n$1\n')
+      .replace(/`([^`\n]+)`/g, '$1');
+  }
+
   // Durante streaming: oculta JSON parcial/completo que está construyendo
   getStreamingDisplay(text) {
     if (!text) return '';
-    const trimmed = text.trimStart();
-    if (trimmed.startsWith('{')) return ''; // Pure tool call — no mostrar nada
-    const jsonStart = text.search(/\n?\s*\{"tool"/);
-    if (jsonStart > 0) return this.stripToolCalls(text.slice(0, jsonStart)).trim();
+    const normalized = this.normalizeToolCallText(text);
+    const trimmed = normalized.trimStart();
+    if (trimmed.startsWith('{')) return 'Usando herramientas...';
+    const jsonStart = normalized.search(/\n?\s*\{[\s\S]*?"tool"\s*:/);
+    if (jsonStart > 0) return this.stripToolCalls(normalized.slice(0, jsonStart)).trim();
     return this.stripToolCalls(text);
   }
 
   // Elimina todos los tool-call JSON del texto final (stack-based)
   stripToolCalls(text) {
     if (!text) return '';
+    text = this.normalizeToolCallText(text);
     let result='', i=0;
     while (i < text.length) {
       if (text[i]!=='{') { result+=text[i++]; continue; }
