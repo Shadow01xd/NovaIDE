@@ -1,0 +1,146 @@
+/* src/renderer/styles/terminal-new.css */
+.ide-terminal {
+  display: flex !important;
+  flex-direction: column;
+  background: var(--bg1, #0a0a0a);
+  border-top: 1px solid var(--bg4, #262626);
+  height: 250px;
+  min-height: 150px;
+  position: relative;
+  overflow: hidden;
+  transition: height 0.2s ease;
+}
+
+.term-header {
+  height: 38px;
+  background: var(--bg0, #050505);
+  border-bottom: 1px solid var(--bg4, #262626);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  flex-shrink: 0;
+  z-index: 5;
+}
+
+.term-tabs {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+  overflow-x: auto;
+  padding-right: 20px;
+}
+
+.term-tabs::-webkit-scrollbar { display: none; }
+
+.term-tab {
+  background: transparent;
+  border: none;
+  color: var(--text1, #a1a1aa);
+  padding: 0 12px;
+  height: 28px;
+  line-height: 28px;
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: var(--font-ui, sans-serif);
+  transition: all 0.2s;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.term-tab:hover {
+  background: var(--bg3, #1a1a1a);
+  color: var(--text0, #ededed);
+}
+
+.term-tab.active {
+  background: var(--bg4, #262626);
+  color: var(--accent, #818cf8);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+.term-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.term-body {
+  flex: 1;
+  position: relative;
+  background: var(--bg1, #0a0a0a);
+  padding: 10px; /* Padding for better visibility */
+  overflow: hidden;
+}
+
+.xterm-container {
+  width: 100%;
+  height: 100%;
+}
+
+.xterm-viewport::-webkit-scrollbar {
+  width: 10px;
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb {
+  background: var(--bg4, #262626);
+  border-radius: 5px;
+  border: 2px solid var(--bg1);
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: var(--text2, #52525b);
+}
+
+/* Fix for xterm focus outline */
+.xterm-screen {
+  border: none !important;
+}
+
+.term-icon-btn {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text2, #52525b);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.term-icon-btn:hover {
+  background: var(--bg3, #1a1a1a);
+  color: var(--text0, #ededed);
+}
+
+.term-icon-btn.kill-btn:hover {
+  color: var(--red, #ef4444);
+}
+
+/* Empty state message styles */
+.no-pty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+  color: var(--text1);
+}
+
+.no-pty pre {
+  margin-top: 15px;
+  padding: 12px;
+  background: var(--bg3);
+  border-radius: 8px;
+  border: 1px solid var(--bg4);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}

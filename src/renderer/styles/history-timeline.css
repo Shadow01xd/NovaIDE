@@ -1,0 +1,115 @@
+/* src/renderer/styles/history-timeline.css */
+.history-timeline {
+  position: absolute;
+  top: 40px;
+  right: 20px;
+  width: 300px;
+  max-height: 80vh;
+  background: var(--bg-sidebar, #1e1e1e);
+  border: 1px solid var(--border-color, #333);
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+  display: flex;
+  flex-direction: column;
+  z-index: 1000;
+  overflow: hidden;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.ht-header {
+  padding: 12px 16px;
+  background: var(--bg-header, #252526);
+  border-bottom: 1px solid var(--border-color, #333);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ht-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--fg-primary, #cccccc);
+}
+
+.ht-close {
+  background: transparent;
+  border: none;
+  color: #888;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.ht-close:hover { color: #fff; }
+
+.ht-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.ht-empty {
+  padding: 20px;
+  text-align: center;
+  color: #666;
+  font-style: italic;
+}
+
+.ht-item {
+  padding: 10px 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+  position: relative;
+}
+
+.ht-item:hover {
+  background: var(--bg-hover, #2a2d2e);
+}
+
+.ht-item.active {
+  background: var(--bg-active, #37373d);
+  border-left: 2px solid var(--accent-color, #007acc);
+}
+
+.ht-item-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--border-color, #444);
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+.ht-item.active .ht-item-dot {
+  background: var(--accent-color, #007acc);
+  box-shadow: 0 0 8px var(--accent-color, #007abbaa);
+}
+
+.ht-item-content {
+  flex: 1;
+}
+
+.ht-item-time {
+  font-size: 12px;
+  color: #eee;
+  margin-bottom: 2px;
+}
+
+.ht-item-date {
+  font-size: 10px;
+  color: #888;
+  margin-left: 4px;
+}
+
+.ht-item-desc {
+  font-size: 11px;
+  color: #aaa;
+}

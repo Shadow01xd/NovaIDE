@@ -2,6 +2,7 @@
 // Panel IA estilo Cursor: streaming, edición inline, apply, historial, modos
 
 import { applyAIEdit } from './editor.js'
+import { renderMarkdown, escapeHtml } from '../utils/markdown.js'
 
 let reqCounter = 0
 const pendingStreams = {}
@@ -293,12 +294,10 @@ export function createAIChat(container, state) {
     contentEl.innerHTML = renderMarkdown(text)
 
     // Agregar botones de acción a bloques de código
-    contentEl.querySelectorAll('pre').forEach(pre => {
-      const code = pre.querySelector('code')?.textContent || pre.textContent
-      const lang  = pre.querySelector('code')?.className?.replace('language-','') || ''
-
-      const actions = document.createElement('div')
-      actions.className = 'code-actions'
+    contentEl.querySelectorAll('.ai-code-block').forEach(block => {
+      const code = block.querySelector('pre code')?.textContent || '';
+      const actions = block.querySelector('.ai-code-actions');
+      if (!actions) return;
 
       // Copiar
       const btnCopy = document.createElement('button')
@@ -340,32 +339,9 @@ export function createAIChat(container, state) {
       })
 
       actions.append(btnCopy, btnInsert, btnApply)
-      pre.style.position = 'relative'
-      pre.appendChild(actions)
     })
 
     el.querySelector('.ai-cursor')?.remove()
     document.getElementById('ai-messages').scrollTop = 9999
-  }
-
-  // Markdown básico (no requiere librerías)
-  function renderMarkdown(text) {
-    return text
-      .replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) =>
-        `<pre><code class="language-${lang}">${escapeHtml(code.trim())}</code></pre>`)
-      .replace(/`([^`\n]+)`/g, '<code class="inline">$1</code>')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.+?)\*/g, '<em>$1</em>')
-      .replace(/^#{3}\s(.+)$/gm, '<h3>$1</h3>')
-      .replace(/^#{2}\s(.+)$/gm, '<h2>$1</h2>')
-      .replace(/^#{1}\s(.+)$/gm, '<h1>$1</h1>')
-      .replace(/^[-*]\s(.+)$/gm, '<li>$1</li>')
-      .replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>')
-      .replace(/\n\n/g, '</p><p>')
-      .replace(/\n/g, '<br>')
-  }
-
-  function escapeHtml(s) {
-    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
   }
 }

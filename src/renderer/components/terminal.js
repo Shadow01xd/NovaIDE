@@ -9,9 +9,9 @@ export function createTerminalPanel(container, state) {
     <div class="term-header">
       <div class="term-tabs" id="term-tabs"></div>
       <div class="term-actions">
-        <button class="icon-btn" id="btn-new-term" title="Nueva terminal">＋</button>
-        <button class="icon-btn" id="btn-kill-term" title="Cerrar terminal">✕</button>
-        <button class="icon-btn" id="btn-close-termbar" title="Ocultar">⌄</button>
+        <button class="term-icon-btn" id="btn-new-term" title="Nueva terminal">＋</button>
+        <button class="term-icon-btn kill-btn" id="btn-kill-term" title="Cerrar terminal">✕</button>
+        <button class="term-icon-btn" id="btn-close-termbar" title="Ocultar">⌄</button>
       </div>
     </div>
     <div class="term-body" id="term-body"></div>
@@ -21,10 +21,27 @@ export function createTerminalPanel(container, state) {
 
   // Escuchar datos del proceso pty
   const unsubData = window.api.onTermData(({ id, data }) => {
-    terminals[id]?.xterm?.write(data)
-  })
-  const unsubExit = window.api.onTermExit(({ id }) => {
-    terminals[id]?.xterm?.write('\r\n\x1b[31m[Proceso terminado]\x1b[0m\r\n')
+    const term = terminals[id]
+    if (!term) return
+    
+    term.xterm.write(data)
+
+    // Detección inteligente de URLs (especialmente localhost/dev)
+    const urlMatch = data.match(/http:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0):([0-9]+)/i)
+    if (urlMatch) {
+      const url = urlMatch[0]
+      if (term.lastUrlDetected !== url) {
+        term.lastUrlDetected = url
+        console.log('Automática de URL detectada:', url)
+        // Opcional: Notificar al usuario o simplemente abrir si es un dev server recién iniciado
+        // Usamos un pequeño timer para no ser tan agresivos si hay múltiples logs
+        clearTimeout(term.urlTimer)
+        term.urlTimer = setTimeout(() => {
+          // window.open(url) // Abrir en navegador externo
+          window.api.openExternal?.(url)
+        }, 1500)
+      }
+    }
   })
 
   async function newTerminal() {
@@ -82,17 +99,23 @@ export function createTerminalPanel(container, state) {
       scrollback: 5000,
     })
 
-    // FitAddon — window.FitAddon es el objeto exportado por xterm-addon-fit
     let fitAddon = null
     try {
-      // xterm-addon-fit@0.8.0 expone: window.FitAddon = { FitAddon: class }
+      // FitAddon
       const FitAddonClass = window.FitAddon?.FitAddon ?? window.FitAddon
       if (FitAddonClass) {
         fitAddon = new FitAddonClass()
         xterm.loadAddon(fitAddon)
       }
+      // WebLinksAddon
+      const WebLinksAddonClass = window.WebLinksAddon?.WebLinksAddon ?? window.WebLinksAddon
+      if (WebLinksAddonClass) {
+        xterm.loadAddon(new WebLinksAddonClass((event, uri) => {
+          window.api.openExternal(uri)
+        }))
+      }
     } catch (e) {
-      console.warn('FitAddon no disponible:', e)
+      console.warn('Addons no disponibles:', e)
     }
 
     xterm.open(termEl)
@@ -111,6 +134,11 @@ export function createTerminalPanel(container, state) {
 
     addTermTab(id)
     switchTo(id)
+
+    // Forzar el ajuste inicial tras un pequeño delay para asegurar que el DOM esté listo
+    setTimeout(() => {
+      try { fitAddon?.fit() } catch(e) {}
+    }, 100)
   }
 
   function addTermTab(id) {

@@ -96,6 +96,36 @@ html, body, #app { height: 100%; overflow: hidden; background: var(--bg1); color
 .ai-added-line  { background: rgba(46,160,67,.18) !important; }
 .ai-glyph::before { content: '✦'; color: #3fb950; font-size: 11px; margin-left: 2px; }
 
+/* AI Thought/Reasoning Block */
+.ai-thought-block {
+  background: rgba(139, 92, 246, 0.05);
+  border-left: 2px solid var(--ai);
+  margin: 12px 0;
+  padding: 10px 14px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text1);
+  border-top: 1px solid rgba(139, 92, 246, 0.1);
+  border-right: 1px solid rgba(139, 92, 246, 0.1);
+  border-bottom: 1px solid rgba(139, 92, 246, 0.1);
+}
+.ai-thought-header {
+  font-weight: 700;
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--ai-light);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  letter-spacing: 0.05em;
+}
+.ai-thought-content {
+  font-style: italic;
+  line-height: 1.5;
+  opacity: 0.9;
+}
+
 /* ── Welcome screen ─────────────────────────────────────────────────────── */
 .ide-welcome { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--bg1); z-index: 10; }
 .welcome-inner { text-align: center; max-width: 420px; }
@@ -419,9 +449,36 @@ html, body, #app { height: 100%; overflow: hidden; background: var(--bg1); color
   font-weight: 500;
 }
 
-.installed-count {
+.sb-item.sb-history {
+  margin-left: 10px;
   font-size: 11px;
   opacity: 0.8;
+}
+
+.sb-live {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: var(--text-secondary);
+  padding: 0 8px;
+}
+
+.sb-live:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+.sb-live.active {
+  background: var(--accent);
+  color: white;
+  animation: pulse-live 2s infinite;
+}
+
+@keyframes pulse-live {
+  0% { opacity: 1; }
+  50% { opacity: 0.7; }
+  100% { opacity: 1; }
 }
 
 .category-separator {

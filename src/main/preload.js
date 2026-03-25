@@ -85,11 +85,18 @@ contextBridge.exposeInMainWorld('api', {
   aiStreamGroq: (msgs, model, apiKey, reqId) => 
     ipcRenderer.invoke('ai:streamGroq', { messages: msgs, model, apiKey, reqId }),
 
-  // Extension Store API (Marketplace) - Temporarily commented out
-  // marketplaceSearch: (query) => ipcRenderer.invoke('marketplace:search', query),
-  // marketplaceDetails: (publisher, name) => ipcRenderer.invoke('marketplace:details', { publisher, name }),
-  // marketplaceInstall: (publisher, name, version) => ipcRenderer.invoke('marketplace:install', { publisher, name, version }),
-  // marketplaceUninstall: (publisher, name) => ipcRenderer.invoke('marketplace:uninstall', { publisher, name }),
-  // marketplaceInstalled: () => ipcRenderer.invoke('marketplace:installed'),
-  // marketplaceCheckUpdates: () => ipcRenderer.invoke('marketplace:check-updates'),
+  // Extension Store API (Marketplace)
+  marketplaceSearch: (query) => ipcRenderer.invoke('marketplace:search', query),
+  marketplaceDetails: (publisher, name) => ipcRenderer.invoke('marketplace:details', { publisher, name }),
+  marketplaceInstall: (publisher, name, version) => ipcRenderer.invoke('marketplace:install', { publisher, name, version }),
+  marketplaceUninstall: (publisher, name) => ipcRenderer.invoke('marketplace:uninstall', { publisher, name }),
+  marketplaceInstalled: () => ipcRenderer.invoke('marketplace:installed'),
+  // History
+  historySave: (filePath, history) => ipcRenderer.invoke('history:save', { filePath, history }),
+  historyGet: (filePath)           => ipcRenderer.invoke('history:get', filePath),
+  // Shell
+  openExternal: (url)              => ipcRenderer.invoke('shell:openExternal', url),
+  // Live Server
+  liveServerStart: (root, port)    => ipcRenderer.invoke('live-server:start', { rootPath: root, port }),
+  liveServerStop: ()               => ipcRenderer.invoke('live-server:stop'),
 })

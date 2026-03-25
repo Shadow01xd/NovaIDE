@@ -1,28 +1,1482 @@
-// src/renderer/components/editor.js
-// Monaco Editor — autocompletado, diff IA, múltiples modelos por tab
+import { registerAllLanguages } from './language-extensions.js'
+import { historyManager } from '../utils/history-manager.js'
 
 const LANG_MAP = {
+  // Lenguajes Web - Monaco nativos
   js:'javascript', jsx:'javascript', ts:'typescript', tsx:'typescript',
-  py:'python', rb:'ruby', go:'go', rs:'rust', cpp:'cpp', c:'cpp', cs:'csharp',
   html:'html', css:'css', scss:'scss', less:'less',
   json:'json', jsonc:'json', md:'markdown', yaml:'yaml', yml:'yaml',
-  sh:'shell', bash:'shell', zsh:'shell', ps1:'powershell',
-  sql:'sql', graphql:'graphql', dockerfile:'dockerfile',
+  
+  // Lenguajes de Programación Principales - Monaco nativos
+  py:'python', rb:'ruby', go:'go', rs:'rust', cpp:'cpp', c:'cpp', cs:'csharp',
   java:'java', kt:'kotlin', swift:'swift', php:'php',
+  
+  // Lenguajes de Scripting - Monaco nativos
+  sh:'shell', bash:'shell', zsh:'shell', ps1:'powershell', bat:'batch',
+  
+  // Bases de Datos - Monaco nativos
+  sql:'sql',
+  
+  // DevOps y Configuración - Extensiones personalizadas
+  dockerfile:'dockerfile', tf:'terraform', hcl:'terraform',
+  toml:'toml', ini:'ini', conf:'ini',
+  
+  // Web Frameworks - Monaco nativos
   vue:'html', svelte:'html', astro:'html',
+  
+  // Lenguajes Funcionales - Monaco nativos
+  hs:'haskell', ml:'ocaml', lisp:'lisp', clojure:'clojure',
+  fsharp:'fsharp', elixir:'elixir', erlang:'erlang',
+  
+  // Lenguajes Científicos y Matemáticos - Monaco nativos
+  r:'r', julia:'julia', matlab:'matlab', m:'matlab',
+  
+  // Lenguajes Especializados - Extensiones personalizadas
+  graphql:'graphql', solidity:'solidity',
+  wasm:'webassembly', wat:'webassembly',
+  
+  // Lenguajes de Markup y Documentación - Monaco nativos
+  xml:'xml', svg:'xml', xhtml:'xml', tex:'latex', bib:'bibtex',
+  
+  // Lenguajes de Redes y Protocolos - Extensiones personalizadas
+  proto:'protobuf', thrift:'thrift', avsc:'avro',
+  
+  // Lenguajes de Mobile - Monaco nativos
+  objc:'objective-c',
+  
+  // Lenguajes de Sistemas - Extensiones personalizadas
+  asm:'assembly', nasm:'assembly', gas:'assembly',
+  
+  // Lenguajes Modernos - Extensiones personalizadas
+  zig:'zig', nim:'nim', v:'v', odin:'odin',
+  
+  // Lenguajes de Plantillas - Monaco nativos
+  erb:'erb', ejs:'javascript', hbs:'handlebars',
+  mustache:'mustache', liquid:'liquid', pug:'pug',
+  
+  // Lenguajes de Estilos Extendidos - Monaco nativos
+  styl:'stylus', postcss:'css',
+  
+  // Lenguajes de Testing - Monaco nativos
+  spec:'javascript', test:'javascript', e2e:'javascript',
+  
+  // Lenguajes de Build - Extensiones personalizadas
+  make:'makefile', cmake:'cmake', gradle:'gradle',
+  maven:'xml', sbt:'scala',
+  
+  // Lenguajes de Infraestructura - Monaco nativos
+  pulumi:'typescript', cdktf:'typescript',
+  
+  // Lenguajes de APIs - Monaco nativos
+  openapi:'yaml', swagger:'yaml',
+  
+  // Lenguajes de Datos - Extensiones personalizadas
+  csv:'csv', tsv:'csv',
+  
+  // Lenguajes de Blockchain - Extensiones personalizadas
+  sol:'solidity', cairo:'cairo',
+  
+  // Lenguajes de Juegos - Extensiones personalizadas
+  gdscript:'gdscript', lua:'lua',
+  
+  // Lenguajes de Embebidos - Monaco nativos
+  arduino:'cpp', pico:'cpp',
+  
+  // Lenguajes de ML/AI - Monaco nativos
+  ipynb:'jupyter',
+  
+  // Default - Monaco nativos
+  txt:'plaintext', log:'plaintext'
+}
+
+// Configuración específica para cada lenguaje
+const LANG_CONFIG = {
+  javascript: {
+    comments: { line: '//', block: ['/*', '*/'] },
+    brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+    autoClosingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ],
+    surroundingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ]
+  },
+  python: {
+    comments: { line: '#' },
+    brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+    autoClosingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ],
+    surroundingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ]
+  },
+  rust: {
+    comments: { line: '//', block: ['/*', '*/'], doc: ['///', '//!'] },
+    brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+    autoClosingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ],
+    surroundingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ]
+  },
+  go: {
+    comments: { line: '//', block: ['/*', '*/'] },
+    brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+    autoClosingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ],
+    surroundingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ]
+  },
+  cpp: {
+    comments: { line: '//', block: ['/*', '*/'] },
+    brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+    autoClosingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" },
+      { open: '<', close: '>' }
+    ],
+    surroundingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" },
+      { open: '<', close: '>' }
+    ]
+  },
+  java: {
+    comments: { line: '//', block: ['/*', '*/'], javadoc: ['/**', '*/'] },
+    brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+    autoClosingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ],
+    surroundingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ]
+  },
+  html: {
+    comments: { block: ['<!--', '-->'] },
+    brackets: [['<', '>']],
+    autoClosingPairs: [
+      { open: '<', close: '>' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ],
+    surroundingPairs: [
+      { open: '<', close: '>' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ]
+  },
+  css: {
+    comments: { block: ['/*', '*/'] },
+    brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+    autoClosingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ],
+    surroundingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ]
+  },
+  json: {
+    comments: { line: '//' }, // JSONC soporta comentarios
+    brackets: [['{', '}'], ['[', ']']],
+    autoClosingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '"', close: '"' }
+    ],
+    surroundingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '"', close: '"' }
+    ]
+  },
+  yaml: {
+    comments: { line: '#' },
+    brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+    autoClosingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ],
+    surroundingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ]
+  },
+  sql: {
+    comments: { line: '--', block: ['/*', '*/'] },
+    brackets: [['(', ')']],
+    autoClosingPairs: [
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ],
+    surroundingPairs: [
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ]
+  },
+  shell: {
+    comments: { line: '#' },
+    brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+    autoClosingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ],
+    surroundingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ]
+  },
+  dockerfile: {
+    comments: { line: '#' },
+    brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+    autoClosingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ],
+    surroundingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ]
+  },
+  markdown: {
+    comments: { line: '<!--', block: ['-->', '-->'] }, // HTML comments en markdown
+    brackets: [['{', '}'], ['[', ']'], ['(', ')'], ['<', '>']],
+    autoClosingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '<', close: '>' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" },
+      { open: '*', close: '*' },
+      { open: '_', close: '_' }
+    ],
+    surroundingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '<', close: '>' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" },
+      { open: '*', close: '*' },
+      { open: '_', close: '_' }
+    ]
+  },
+  latex: {
+    comments: { line: '%' },
+    brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+    autoClosingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ],
+    surroundingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ]
+  },
+  php: {
+    comments: { line: '//', block: ['/*', '*/'], phpdoc: ['/**', '*/'] },
+    brackets: [['{', '}'], ['[', ']'], ['(', ')'], ['<', '>']],
+    autoClosingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '<', close: '>' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ],
+    surroundingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '<', close: '>' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ]
+  },
+  ruby: {
+    comments: { line: '#', block: ['=begin', '=end'] },
+    brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+    autoClosingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ],
+    surroundingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ]
+  },
+  swift: {
+    comments: { line: '//', block: ['/*', '*/'], doc: ['///', '/**'] },
+    brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+    autoClosingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ],
+    surroundingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ]
+  },
+  kotlin: {
+    comments: { line: '//', block: ['/*', '*/'], kdoc: ['/**', '*/'] },
+    brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+    autoClosingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ],
+    surroundingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ]
+  },
+  scala: {
+    comments: { line: '//', block: ['/*', '*/'], scaladoc: ['/**', '*/'] },
+    brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+    autoClosingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ],
+    surroundingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ]
+  },
+  haskell: {
+    comments: { line: '--', block: ['{-', '-}'] },
+    brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+    autoClosingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ],
+    surroundingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ]
+  },
+  r: {
+    comments: { line: '#' },
+    brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+    autoClosingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ],
+    surroundingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ]
+  },
+  julia: {
+    comments: { line: '#', block: ['#=', '=#'] },
+    brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+    autoClosingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ],
+    surroundingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ]
+  },
+  solidity: {
+    comments: { line: '//', block: ['/*', '*/'], natspec: ['///', '@'] },
+    brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+    autoClosingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ],
+    surroundingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ]
+  },
+  lua: {
+    comments: { line: '--', block: ['--[[', ']]'] },
+    brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+    autoClosingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ],
+    surroundingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ]
+  },
+  assembly: {
+    comments: { line: ';', block: ['/*', '*/'] },
+    brackets: [['[', ']'], ['(', ')']],
+    autoClosingPairs: [
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ],
+    surroundingPairs: [
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ]
+  }
 }
 
 export function getLang(filePath) {
   if (!filePath) return 'plaintext'
-  const ext = filePath.split('.').pop()?.toLowerCase()
-  const lang = LANG_MAP[ext] || 'plaintext'
+  
+  // Extraer extensión y nombre de archivo
+  const fileName = filePath.split('/').pop()?.split('\\').pop() || ''
+  const ext = fileName.split('.').pop()?.toLowerCase()
+  const baseName = fileName.split('.').slice(0, -1).join('.').toLowerCase()
+  
+  // Mapeo de lenguajes principal
+  let lang = LANG_MAP[ext] || 'plaintext'
+  
+  // Casos especiales basados en el nombre del archivo
+  const specialFiles = {
+    // Archivos de configuración
+    'dockerfile': 'dockerfile',
+    'makefile': 'makefile',
+    'cmakelists.txt': 'cmake',
+    'rakefile': 'ruby',
+    'gemfile': 'ruby',
+    'podfile': 'ruby',
+    'vagrantfile': 'ruby',
+    'package.json': 'json',
+    'tsconfig.json': 'jsonc',
+    'jsconfig.json': 'jsonc',
+    'composer.json': 'json',
+    'cargo.toml': 'toml',
+    'pyproject.toml': 'toml',
+    'requirements.txt': 'plaintext',
+    'pipfile': 'toml',
+    'poetry.lock': 'toml',
+    'yarn.lock': 'yaml',
+    'package-lock.json': 'json',
+    'composer.lock': 'json',
+    'go.mod': 'go',
+    'go.sum': 'plaintext',
+    'requirements.yaml': 'yaml',
+    'values.yaml': 'yaml',
+    'chart.yaml': 'yaml',
+    'docker-compose.yml': 'yaml',
+    'docker-compose.yaml': 'yaml',
+    'terraform.tfvars': 'terraform',
+    '.env': 'dotenv',
+    '.env.example': 'dotenv',
+    '.gitignore': 'gitignore',
+    '.dockerignore': 'plaintext',
+    'nginx.conf': 'nginx',
+    'apache.conf': 'apache',
+    'vhost.conf': 'apache',
+    
+    // Archivos de documentación
+    'readme.md': 'markdown',
+    'readme.txt': 'plaintext',
+    'readme': 'plaintext',
+    'license': 'plaintext',
+    'license.md': 'markdown',
+    'changelog.md': 'markdown',
+    'contributing.md': 'markdown',
+    
+    // Archivos de CI/CD
+    'jenkinsfile': 'groovy',
+    'azure-pipelines.yml': 'yaml',
+    '.github/workflows': 'yaml',
+    '.gitlab-ci.yml': 'yaml',
+    'bitbucket-pipelines.yml': 'yaml',
+    
+    // Archivos de bases de datos
+    'schema.sql': 'sql',
+    'database.sql': 'sql',
+    'migration.sql': 'sql',
+    'seed.sql': 'sql',
+    
+    // Archivos de testing
+    'jest.config.js': 'javascript',
+    'vitest.config.js': 'javascript',
+    'cypress.config.js': 'javascript',
+    'playwright.config.js': 'javascript',
+    'test.spec.js': 'javascript',
+    'test.spec.ts': 'typescript',
+    
+    // Archivos de build
+    'webpack.config.js': 'javascript',
+    'rollup.config.js': 'javascript',
+    'vite.config.js': 'javascript',
+    'babel.config.js': 'javascript',
+    'tsconfig.json': 'jsonc',
+    'babelrc': 'json',
+    '.babelrc': 'json',
+    
+    // Archivos de linters
+    '.eslintrc.js': 'javascript',
+    '.eslintrc.json': 'json',
+    '.prettierrc': 'json',
+    '.prettierrc.json': 'json',
+    'tslint.json': 'json',
+    
+    // Archivos de Docker
+    'dockerfile.dev': 'dockerfile',
+    'dockerfile.prod': 'dockerfile',
+    'dockerfile.build': 'dockerfile',
+    
+    // Archivos de Kubernetes
+    'k8s.yaml': 'yaml',
+    'deployment.yaml': 'yaml',
+    'service.yaml': 'yaml',
+    'ingress.yaml': 'yaml',
+    'configmap.yaml': 'yaml',
+    'secret.yaml': 'yaml',
+    
+    // Archivos de Terraform
+    'main.tf': 'terraform',
+    'variables.tf': 'terraform',
+    'outputs.tf': 'terraform',
+    'provider.tf': 'terraform',
+    
+    // Archivos de Ansible
+    'playbook.yml': 'yaml',
+    'inventory.yml': 'yaml',
+    'ansible.cfg': 'ini',
+    
+    // Archivos de protocolos
+    'schema.proto': 'protobuf',
+    'service.thrift': 'thrift',
+    'model.avsc': 'avro',
+    
+    // Archivos de documentación técnica
+    'api.md': 'markdown',
+    'docs.md': 'markdown',
+    'tutorial.md': 'markdown',
+    'guide.md': 'markdown',
+    
+    // Archivos de configuración de IDE
+    '.vscode/settings.json': 'jsonc',
+    '.vscode/launch.json': 'jsonc',
+    '.vscode/tasks.json': 'jsonc',
+    '.editorconfig': 'ini',
+    
+    // Archivos de seguridad
+    'ssh_config': 'ssh',
+    'sshd_config': 'ssh',
+    'known_hosts': 'plaintext',
+    
+    // Archivos de logs
+    'access.log': 'log',
+    'error.log': 'log',
+    'debug.log': 'log',
+    
+    // Archivos de datos
+    'data.csv': 'csv',
+    'export.csv': 'csv',
+    'import.csv': 'csv',
+    'data.tsv': 'csv',
+    'data.xml': 'xml',
+    'config.xml': 'xml',
+    
+    // Archivos de plantillas
+    'template.html': 'html',
+    'layout.html': 'html',
+    'index.html': 'html',
+    'app.html': 'html',
+    
+    // Archivos de estilos
+    'style.css': 'css',
+    'main.css': 'css',
+    'theme.css': 'css',
+    'reset.css': 'css',
+    'normalize.css': 'css',
+    
+    // Archivos de scripts
+    'build.sh': 'shell',
+    'deploy.sh': 'shell',
+    'setup.sh': 'shell',
+    'install.sh': 'shell',
+    'run.sh': 'shell',
+    'start.sh': 'shell',
+    'stop.sh': 'shell',
+    'script.sh': 'shell',
+    'bootstrap.sh': 'shell',
+    
+    // Archivos de Windows
+    'build.bat': 'batch',
+    'deploy.bat': 'batch',
+    'setup.bat': 'batch',
+    'install.bat': 'batch',
+    'run.bat': 'batch',
+    'start.bat': 'batch',
+    'stop.bat': 'batch',
+    'script.bat': 'batch',
+    
+    // Archivos PowerShell
+    'build.ps1': 'powershell',
+    'deploy.ps1': 'powershell',
+    'setup.ps1': 'powershell',
+    'install.ps1': 'powershell',
+    'run.ps1': 'powershell',
+    'start.ps1': 'powershell',
+    'stop.ps1': 'powershell',
+    'script.ps1': 'powershell',
+    
+    // Archivos de juegos
+    'main.gd': 'gdscript',
+    'player.gd': 'gdscript',
+    'enemy.gd': 'gdscript',
+    'ui.gd': 'gdscript',
+    
+    // Archivos de LaTeX
+    'main.tex': 'latex',
+    'article.tex': 'latex',
+    'report.tex': 'latex',
+    'thesis.tex': 'latex',
+    'book.tex': 'latex',
+    'presentation.tex': 'latex',
+    'bibliography.bib': 'bibtex'
+  }
+  
+  // Verificar si el nombre del archivo coincide con algún caso especial
+  if (specialFiles[fileName.toLowerCase()]) {
+    return specialFiles[fileName.toLowerCase()]
+  }
+  
+  // Verificar si el nombre base (sin extensión) coincide
+  if (specialFiles[baseName]) {
+    return specialFiles[baseName]
+  }
+  
+  // Casos especiales basados en patrones
+  if (baseName.includes('dockerfile')) return 'dockerfile'
+  if (baseName.includes('makefile')) return 'makefile'
+  if (baseName.includes('readme')) return baseName.includes('.md') ? 'markdown' : 'plaintext'
+  if (baseName.includes('license')) return baseName.includes('.md') ? 'markdown' : 'plaintext'
+  if (baseName.includes('changelog')) return baseName.includes('.md') ? 'markdown' : 'plaintext'
+  if (baseName.includes('contributing')) return baseName.includes('.md') ? 'markdown' : 'plaintext'
+  if (baseName.includes('test') || baseName.includes('spec')) {
+    if (ext === 'js') return 'javascript'
+    if (ext === 'ts') return 'typescript'
+    if (ext === 'py') return 'python'
+    if (ext === 'rb') return 'ruby'
+    if (ext === 'go') return 'go'
+    if (ext === 'java') return 'java'
+  }
+  if (baseName.includes('config') || baseName.includes('settings')) {
+    if (ext === 'json') return 'jsonc'
+    if (ext === 'yaml' || ext === 'yml') return 'yaml'
+    if (ext === 'toml') return 'toml'
+    if (ext === 'ini') return 'ini'
+  }
+  if (baseName.includes('schema') || baseName.includes('model')) {
+    if (ext === 'sql') return 'sql'
+    if (ext === 'proto') return 'protobuf'
+    if (ext === 'thrift') return 'thrift'
+    if (ext === 'avsc') return 'avro'
+  }
+  if (baseName.includes('migration') || baseName.includes('seed')) {
+    return 'sql'
+  }
+  if (baseName.includes('docker') && (ext === 'yml' || ext === 'yaml')) {
+    return 'yaml'
+  }
+  if (baseName.includes('k8s') || baseName.includes('kubernetes')) {
+    return 'yaml'
+  }
+  if (baseName.includes('terraform') || baseName.includes('tf')) {
+    return 'terraform'
+  }
+  if (baseName.includes('ansible')) {
+    return 'yaml'
+  }
+  if (baseName.includes('jenkins')) {
+    return 'groovy'
+  }
+  if (baseName.includes('pipeline') || baseName.includes('ci')) {
+    return 'yaml'
+  }
+  if (baseName.includes('build') || baseName.includes('deploy') || baseName.includes('setup')) {
+    if (ext === 'sh') return 'shell'
+    if (ext === 'bat') return 'batch'
+    if (ext === 'ps1') return 'powershell'
+  }
+  if (baseName.includes('webpack') || baseName.includes('rollup') || baseName.includes('vite') || baseName.includes('babel')) {
+    return 'javascript'
+  }
+  if (baseName.includes('eslint') || baseName.includes('prettier') || baseName.includes('tslint')) {
+    return 'json'
+  }
+  if (baseName.includes('jest') || baseName.includes('vitest') || baseName.includes('cypress') || baseName.includes('playwright')) {
+    return 'javascript'
+  }
+  if (baseName.includes('style') || baseName.includes('theme') || baseName.includes('main') || baseName.includes('layout')) {
+    if (ext === 'css') return 'css'
+    if (ext === 'scss') return 'scss'
+    if (ext === 'sass') return 'sass'
+    if (ext === 'less') return 'less'
+    if (ext === 'styl') return 'stylus'
+  }
+  if (baseName.includes('template') || baseName.includes('layout') || baseName.includes('index') || baseName.includes('app')) {
+    if (ext === 'html') return 'html'
+    if (ext === 'vue') return 'html'
+    if (ext === 'svelte') return 'html'
+    if (ext === 'jsx') return 'javascript'
+    if (ext === 'tsx') return 'typescript'
+  }
+  if (baseName.includes('data') || baseName.includes('export') || baseName.includes('import')) {
+    if (ext === 'csv' || ext === 'tsv') return 'csv'
+    if (ext === 'xml') return 'xml'
+    if (ext === 'json') return 'json'
+  }
+  if (baseName.includes('log') || baseName.includes('access') || baseName.includes('error') || baseName.includes('debug')) {
+    return 'log'
+  }
+  if (baseName.includes('gd') && ext === 'gd') return 'gdscript'
+  if (baseName.includes('main') || baseName.includes('article') || baseName.includes('report') || baseName.includes('thesis') || baseName.includes('book') || baseName.includes('presentation')) {
+    if (ext === 'tex') return 'latex'
+  }
+  if (baseName.includes('bibliography') && ext === 'bib') return 'bibtex'
   
   // Para archivos JSX/TSX, asegurarse de que se use el modo correcto
   if (ext === 'jsx' || ext === 'tsx') {
     return lang // 'javascript' o 'typescript'
   }
   
+  // Para archivos especiales que necesitan tratamiento diferente
+  if (ext === 'md' && (baseName.includes('readme') || baseName.includes('license') || baseName.includes('changelog') || baseName.includes('contributing'))) {
+    return 'markdown'
+  }
+  
   return lang
+}
+
+// Función para obtener la configuración específica del lenguaje
+export function getLangConfig(language) {
+  return LANG_CONFIG[language] || {
+    comments: { line: '//', block: ['/*', '*/'] },
+    brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+    autoClosingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ],
+    surroundingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ]
+  }
+}
+
+// Función para detectar si un archivo es de configuración
+export function isConfigFile(filePath) {
+  const fileName = filePath.split('/').pop()?.split('\\').pop() || ''
+  const baseName = fileName.split('.').slice(0, -1).join('.').toLowerCase()
+  const ext = fileName.split('.').pop()?.toLowerCase()
+  
+  const configPatterns = [
+    /config/i, /settings/i, /setup/i, /init/i, /rc$/i,
+    /\.env/, /\.gitignore/, /\.dockerignore/,
+    /dockerfile/i, /makefile/i,
+    /package\.json/, /tsconfig\.json/, /jsconfig\.json/,
+    /composer\.json/, /cargo\.toml/, /pyproject\.toml/,
+    /requirements\.(txt|yaml|yml)/, /pipfile/, /poetry\.lock/,
+    /yarn\.lock/, /package-lock\.json/, /composer\.lock/,
+    /go\.mod/, /go\.sum/,
+    /webpack\.config/, /rollup\.config/, /vite\.config/,
+    /babel\.config/, /\.babelrc/,
+    /\.eslintrc/, /\.prettierrc/, /tslint\.json/,
+    /jenkinsfile/i, /azure-pipelines/, /\.github\/workflows/,
+    /\.gitlab-ci\.yml/, /bitbucket-pipelines/,
+    /schema\.sql/, /database\.sql/, /migration\.sql/,
+    /docker-compose\.(yml|yaml)/,
+    /terraform\.tfvars/, /k8s\./, /deployment\./,
+    /service\./, /ingress\./, /configmap\./, /secret\./,
+    /playbook\./, /inventory\./, /ansible\.cfg/,
+    /schema\.proto/, /service\.thrift/, /model\.avsc/,
+    /\.vscode\/settings/, /\.vscode\/launch/, /\.vscode\/tasks/,
+    /\.editorconfig/, /ssh_config/, /sshd_config/,
+    /access\.log/, /error\.log/, /debug\.log/,
+    /nginx\.conf/, /apache\.conf/, /vhost\.conf/
+  ]
+  
+  return configPatterns.some(pattern => pattern.test(fileName) || pattern.test(baseName))
+}
+
+// Función para detectar si un archivo es de documentación
+export function isDocumentationFile(filePath) {
+  const fileName = filePath.split('/').pop()?.split('\\').pop() || ''
+  const baseName = fileName.split('.').slice(0, -1).join('.').toLowerCase()
+  const ext = fileName.split('.').pop()?.toLowerCase()
+  
+  const docPatterns = [
+    /readme/i, /license/i, /changelog/i, /contributing/i,
+    /docs?/i, /guide/i, /tutorial/i, /manual/i, /help/i,
+    /api/i, /reference/i, /spec/i, /design/i,
+    /faq/i, /troubleshooting/i, /getting\.started/i
+  ]
+  
+  return (docPatterns.some(pattern => pattern.test(baseName)) && (ext === 'md' || ext === 'txt')) || 
+         ext === 'md' || ext === 'tex' || ext === 'bib'
+}
+
+// Función para detectar si un archivo es de testing
+export function isTestFile(filePath) {
+  const fileName = filePath.split('/').pop()?.split('\\').pop() || ''
+  const baseName = fileName.split('.').slice(0, -1).join('.').toLowerCase()
+  const ext = fileName.split('.').pop()?.toLowerCase()
+  
+  const testPatterns = [
+    /test/i, /spec/i, /e2e/i, /integration/i, /unit/i,
+    /\.test\./, /\.spec\./, /__tests__/, /tests?\//,
+    /cypress/, /playwright/, /jest/, /vitest/, /mocha/
+  ]
+  
+  return testPatterns.some(pattern => pattern.test(fileName) || pattern.test(baseName))
+}
+
+// Función para obtener el tipo de archivo
+export function getFileType(filePath) {
+  if (isConfigFile(filePath)) return 'config'
+  if (isDocumentationFile(filePath)) return 'documentation'
+  if (isTestFile(filePath)) return 'test'
+  return 'code'
+}
+
+// Función para configurar el editor según el lenguaje
+export function configureEditorForLanguage(editor, language, filePath) {
+  const monaco = window.monaco
+  if (!monaco || !editor) return
+  
+  // Verificar si el lenguaje está registrado en Monaco
+  const registeredLanguages = monaco.languages.getLanguages().map(lang => lang.id)
+  if (!registeredLanguages.includes(language)) {
+    console.warn(`[Editor] Lenguaje no registrado: ${language}, usando plaintext`)
+    return
+  }
+  
+  const config = getLangConfig(language)
+  
+  // Configurar autocompletado específico del lenguaje
+  const languageConfig = {
+    javascript: {
+      // Configuración específica para JavaScript
+      suggest: {
+        showClasses: true,
+        showFunctions: true,
+        showVariables: true,
+        showModules: true,
+        showProperties: true,
+        showConstructors: true
+      },
+      quickSuggestions: {
+        other: true,
+        comments: true,
+        strings: true
+      }
+    },
+    typescript: {
+      // Configuración específica para TypeScript
+      suggest: {
+        showClasses: true,
+        showFunctions: true,
+        showVariables: true,
+        showModules: true,
+        showProperties: true,
+        showConstructors: true,
+        showInterfaces: true,
+        showTypeParameters: true
+      },
+      quickSuggestions: {
+        other: true,
+        comments: true,
+        strings: true
+      }
+    },
+    python: {
+      // Configuración específica para Python
+      suggest: {
+        showClasses: true,
+        showFunctions: true,
+        showVariables: true,
+        showModules: true
+      },
+      quickSuggestions: {
+        other: true,
+        comments: false,
+        strings: true
+      }
+    },
+    html: {
+      // Configuración específica para HTML
+      suggest: {
+        showClasses: true,
+        showFunctions: false,
+        showVariables: false,
+        showModules: false,
+        showProperties: true
+      },
+      quickSuggestions: {
+        other: true,
+        comments: false,
+        strings: true
+      }
+    },
+    css: {
+      // Configuración específica para CSS
+      suggest: {
+        showClasses: true,
+        showFunctions: false,
+        showVariables: true,
+        showModules: false,
+        showProperties: true,
+        showColors: true
+      },
+      quickSuggestions: {
+        other: true,
+        comments: false,
+        strings: true
+      }
+    },
+    json: {
+      // Configuración específica para JSON
+      suggest: {
+        showClasses: false,
+        showFunctions: false,
+        showVariables: false,
+        showModules: false,
+        showProperties: true
+      },
+      quickSuggestions: {
+        other: true,
+        comments: false,
+        strings: true
+      }
+    },
+    yaml: {
+      // Configuración específica para YAML
+      suggest: {
+        showClasses: false,
+        showFunctions: false,
+        showVariables: false,
+        showModules: false,
+        showProperties: true
+      },
+      quickSuggestions: {
+        other: true,
+        comments: false,
+        strings: true
+      }
+    },
+    sql: {
+      // Configuración específica para SQL
+      suggest: {
+        showClasses: false,
+        showFunctions: true,
+        showVariables: false,
+        showModules: false,
+        showProperties: false
+      },
+      quickSuggestions: {
+        other: true,
+        comments: false,
+        strings: true
+      }
+    },
+    shell: {
+      // Configuración específico para Shell
+      suggest: {
+        showClasses: false,
+        showFunctions: true,
+        showVariables: false,
+        showModules: false,
+        showProperties: false
+      },
+      quickSuggestions: {
+        other: true,
+        comments: false,
+        strings: true
+      }
+    },
+    dockerfile: {
+      // Configuración específica para Dockerfile
+      suggest: {
+        showClasses: false,
+        showFunctions: true,
+        showVariables: false,
+        showModules: false,
+        showProperties: false
+      },
+      quickSuggestions: {
+        other: true,
+        comments: false,
+        strings: true
+      }
+    },
+    markdown: {
+      // Configuración específica para Markdown
+      suggest: {
+        showClasses: false,
+        showFunctions: false,
+        showVariables: false,
+        showModules: false,
+        showProperties: false
+      },
+      quickSuggestions: {
+        other: true,
+        comments: false,
+        strings: true
+      }
+    }
+  }
+  
+  // Aplicar configuración específica del lenguaje si existe
+  if (languageConfig[language]) {
+    const langSpecificConfig = languageConfig[language]
+    
+    // Actualizar opciones del editor
+    editor.updateOptions({
+      suggest: {
+        ...editor.getOptions().suggest,
+        ...langSpecificConfig.suggest
+      },
+      quickSuggestions: langSpecificConfig.quickSuggestions
+    })
+  }
+  
+  // Configurar pares de cierre automático según el lenguaje
+  if (config && config.autoClosingPairs && Array.isArray(config.autoClosingPairs)) {
+    try {
+      monaco.languages.setLanguageConfiguration(language, {
+        autoClosingPairs: config.autoClosingPairs,
+        surroundingPairs: config.surroundingPairs || [],
+        brackets: config.brackets || [],
+        comments: config.comments
+      })
+    } catch (error) {
+      console.warn(`[Editor] Error configurando lenguaje ${language}:`, error)
+    }
+  }
+  
+  // Configurar formato al tipo para lenguajes específicos
+  const formatOnTypeLanguages = ['javascript', 'typescript', 'html', 'css', 'scss', 'less']
+  if (formatOnTypeLanguages.includes(language)) {
+    editor.updateOptions({
+      formatOnType: true
+    })
+  }
+  
+  // Configurar acciones de código al guardar para lenguajes que lo soportan
+  const codeActionsLanguages = ['javascript', 'typescript', 'python', 'java', 'csharp', 'cpp']
+  if (codeActionsLanguages.includes(language)) {
+    editor.updateOptions({
+      codeActionsOnSave: {
+        'source.fixAll': 'explicit',
+        'source.organizeImports': 'explicit'
+      }
+    })
+  }
+  
+  // Configurar lens de código para lenguajes que lo soportan
+  const codeLensLanguages = ['javascript', 'typescript', 'python', 'java', 'csharp']
+  if (codeLensLanguages.includes(language)) {
+    editor.updateOptions({
+      codeLens: true
+    })
+  }
+}
+
+// Función para registrar snippets específicos por lenguaje
+export function registerLanguageSpecificSnippets(monaco) {
+  // JavaScript/TypeScript snippets
+  const jsTsSnippets = [
+    {
+      label: 'console.log',
+      insertText: 'console.log($1);',
+      documentation: 'Console log statement'
+    },
+    {
+      label: 'function',
+      insertText: 'function ${1:functionName}(${2:parameters}) {\n\t${3:// body}\n}',
+      documentation: 'Function declaration'
+    },
+    {
+      label: 'arrow function',
+      insertText: 'const ${1:functionName} = (${2:parameters}) => {\n\t${3:// body}\n}',
+      documentation: 'Arrow function'
+    },
+    {
+      label: 'if statement',
+      insertText: 'if (${1:condition}) {\n\t${2:// body}\n}',
+      documentation: 'If statement'
+    },
+    {
+      label: 'try-catch',
+      insertText: 'try {\n\t${1:// try block}\n} catch (${2:error}) {\n\t${3:// catch block}\n}',
+      documentation: 'Try-catch block'
+    },
+    {
+      label: 'import',
+      insertText: 'import ${1:module} from \'${2:path}\'',
+      documentation: 'Import statement'
+    },
+    {
+      label: 'export default',
+      insertText: 'export default ${1:name}',
+      documentation: 'Export default'
+    },
+    {
+      label: 'for loop',
+      insertText: 'for (let ${1:i} = 0; ${1:i} < ${2:array}.length; ${1:i}++) {\n\t${3:// body}\n}',
+      documentation: 'For loop'
+    },
+    {
+      label: 'forEach',
+      insertText: '${1:array}.forEach((${2:item}) => {\n\t${3:// body}\n});',
+      documentation: 'ForEach loop'
+    },
+    {
+      label: 'map',
+      insertText: '${1:array}.map((${2:item}) => ${3:expression});',
+      documentation: 'Map function'
+    }
+  ]
+  
+  // Python snippets
+  const pythonSnippets = [
+    {
+      label: 'def',
+      insertText: 'def ${1:function_name}(${2:parameters}):\n\t${3:pass}',
+      documentation: 'Function definition'
+    },
+    {
+      label: 'class',
+      insertText: 'class ${1:ClassName}:\n\tdef __init__(self${2:, parameters}):\n\t\t${3:pass}',
+      documentation: 'Class definition'
+    },
+    {
+      label: 'if',
+      insertText: 'if ${1:condition}:\n\t${2:pass}',
+      documentation: 'If statement'
+    },
+    {
+      label: 'for',
+      insertText: 'for ${1:item} in ${2:iterable}:\n\t${3:pass}',
+      documentation: 'For loop'
+    },
+    {
+      label: 'while',
+      insertText: 'while ${1:condition}:\n\t${2:pass}',
+      documentation: 'While loop'
+    },
+    {
+      label: 'try-except',
+      insertText: 'try:\n\t${1:pass}\nexcept ${2:Exception} as ${3:e}:\n\t${4:pass}',
+      documentation: 'Try-except block'
+    },
+    {
+      label: 'import',
+      insertText: 'import ${1:module}',
+      documentation: 'Import module'
+    },
+    {
+      label: 'from import',
+      insertText: 'from ${1:module} import ${2:name}',
+      documentation: 'From import'
+    },
+    {
+      label: 'print',
+      insertText: 'print(${1:value})',
+      documentation: 'Print statement'
+    },
+    {
+      label: 'list comprehension',
+      insertText: '[${1:expression} for ${2:item} in ${3:iterable}]',
+      documentation: 'List comprehension'
+    }
+  ]
+  
+  // HTML snippets
+  const htmlSnippets = [
+    {
+      label: 'div',
+      insertText: '<div class="${1:className}">\n\t${2:content}\n</div>',
+      documentation: 'Div element'
+    },
+    {
+      label: 'span',
+      insertText: '<span class="${1:className}">${2:content}</span>',
+      documentation: 'Span element'
+    },
+    {
+      label: 'link',
+      insertText: '<link rel="stylesheet" href="${1:style.css}">',
+      documentation: 'Link stylesheet'
+    },
+    {
+      label: 'script',
+      insertText: '<script src="${1:script.js}"></script>',
+      documentation: 'Script element'
+    },
+    {
+      label: 'img',
+      insertText: '<img src="${1:image.jpg}" alt="${2:description}">',
+      documentation: 'Image element'
+    },
+    {
+      label: 'a',
+      insertText: '<a href="${1:#}">${2:link text}</a>',
+      documentation: 'Anchor element'
+    },
+    {
+      label: 'form',
+      insertText: '<form action="${1:/submit}" method="${2:POST}">\n\t${3:content}\n</form>',
+      documentation: 'Form element'
+    },
+    {
+      label: 'input',
+      insertText: '<input type="${1:text}" name="${2:name}" placeholder="${3:placeholder}">',
+      documentation: 'Input element'
+    },
+    {
+      label: 'button',
+      insertText: '<button type="${1:submit}">${2:text}</button>',
+      documentation: 'Button element'
+    },
+    {
+      label: 'meta',
+      insertText: '<meta charset="${1:UTF-8}">',
+      documentation: 'Meta element'
+    }
+  ]
+  
+  // CSS snippets
+  const cssSnippets = [
+    {
+      label: 'margin',
+      insertText: 'margin: ${1:0};',
+      documentation: 'Margin shorthand'
+    },
+    {
+      label: 'padding',
+      insertText: 'padding: ${1:0};',
+      documentation: 'Padding shorthand'
+    },
+    {
+      label: 'display',
+      insertText: 'display: ${1:flex};',
+      documentation: 'Display property'
+    },
+    {
+      label: 'position',
+      insertText: 'position: ${1:relative};',
+      documentation: 'Position property'
+    },
+    {
+      label: 'width',
+      insertText: 'width: ${1:100%};',
+      documentation: 'Width property'
+    },
+    {
+      label: 'height',
+      insertText: 'height: ${1:100%};',
+      documentation: 'Height property'
+    },
+    {
+      label: 'background',
+      insertText: 'background: ${1:#ffffff};',
+      documentation: 'Background property'
+    },
+    {
+      label: 'color',
+      insertText: 'color: ${1:#000000};',
+      documentation: 'Color property'
+    },
+    {
+      label: 'font-size',
+      insertText: 'font-size: ${1:16px};',
+      documentation: 'Font size property'
+    },
+    {
+      label: 'border',
+      insertText: 'border: ${1:1px solid #ccc};',
+      documentation: 'Border property'
+    }
+  ]
+  
+  // Registrar snippets para cada lenguaje
+  const snippetProviders = {
+    javascript: jsTsSnippets,
+    typescript: jsTsSnippets,
+    python: pythonSnippets,
+    html: htmlSnippets,
+    css: cssSnippets,
+    scss: cssSnippets,
+    less: cssSnippets
+  }
+  
+  Object.entries(snippetProviders).forEach(([lang, snippets]) => {
+    monaco.languages.registerCompletionItemProvider(lang, {
+      provideCompletionItems: (model, position) => {
+        const word = model.getWordUntilPosition(position)
+        const range = {
+          startLineNumber: position.lineNumber,
+          endLineNumber: position.lineNumber,
+          startColumn: word.startColumn,
+          endColumn: word.endColumn
+        }
+        
+        return {
+          suggestions: snippets.map(snippet => ({
+            label: snippet.label,
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: snippet.insertText,
+            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            documentation: snippet.documentation,
+            range: range
+          }))
+        }
+      }
+    })
+  })
 }
 
 // Decoraciones de la IA (líneas añadidas/modificadas)
@@ -38,6 +1492,9 @@ export async function createEditor(container, state, themeMgr = null) {
   
   // Guardar referencia al ThemeManager
   themeManager = themeMgr
+
+  // ── Registrar extensiones de lenguaje ─────────────────────────────────────
+  registerAllLanguages(monaco)
 
   // ── Configuración de TypeScript/JavaScript con JSX ───────────────────────────
   setupTypeScriptAndJSX(monaco)
@@ -94,6 +1551,32 @@ export async function createEditor(container, state, themeMgr = null) {
     multiCursorModifier: 'alt',
     snippetSuggestions: 'top',
     tabCompletion: 'on',
+    // Configuración avanzada por lenguaje
+    acceptSuggestionOnCommitCharacter: true,
+    acceptSuggestionOnEnter: 'on',
+    codeActionsOnSave: {
+      'source.fixAll': 'explicit',
+      'source.organizeImports': 'explicit'
+    },
+    codeLens: true,
+    lightbulb: { enabled: true },
+    definitionLinkOpensInPeek: true,
+    gotoLocation: { multipleDefinitions: 'goto' },
+    links: true,
+    mouseWheelZoom: true,
+    showFoldingControls: 'mouseover',
+    showUnused: true,
+    smartSelect: { enabled: true },
+    stickyScroll: { enabled: true },
+    stickyTabStops: true,
+    unicodeHighlight: { 
+      ambiguousCharacters: true, 
+      invisibleCharacters: true 
+    },
+    unboundLinkTargets: true,
+    wordBasedSuggestions: true,
+    wordBasedSuggestionsOnlyLanguages: true,
+    suggestSelection: 'first'
   })
 
   state.editorInstance = editor
@@ -123,6 +1606,9 @@ export async function createEditor(container, state, themeMgr = null) {
   // ── Proveedor de autocompletado con IA ────────────────────────────────
   registerInlineGhostProviders(monaco, state)
   registerHtmlSnippetCompletions(monaco)
+  
+  // ── Configurar soporte completo para lenguajes ─────────────────────────────
+  registerLanguageSpecificSnippets(monaco)
 
   // ── Comandos de prueba para Ghost Text ────────────────────────────────────
   // Trigger manual con Ctrl+Shift+I para debug
@@ -136,18 +1622,48 @@ export async function createEditor(container, state, themeMgr = null) {
   let currentRequest = null
 
   editor.onDidChangeModelContent((e) => {
-    if (state.currentFile) state.markDirty(state.currentFile)
+    if (state.currentFile) {
+      state.markDirty(state.currentFile)
+      
+      // Capturar estado para el historial
+      const currentFile = state.currentFile
+      const content = editor.getValue()
+      const cursor = editor.getPosition()
+      const selection = editor.getSelection()
+      
+      // Agrupar cambios de escritura normales, PERO forzar si es fin de frase
+      const lastChar = e.changes[0]?.text?.slice(-1)
+      const isSentenceEnd = /[\.\!\?\;\:\n]/.test(lastChar)
+      
+      const isTyping = e.changes?.some(ch => 
+        ch.text && ch.rangeLength === 0 && ch.text.length <= 20
+      )
+      
+      const forcePush = !isTyping || isSentenceEnd
+
+      historyManager.pushState(currentFile, {
+        content,
+        cursor,
+        selection,
+        language: getLang(currentFile)
+      }, forcePush)
+
+      // Guardar historial en disco (debounce)
+      clearTimeout(state.historySaveTimer)
+      state.historySaveTimer = setTimeout(async () => {
+        const historyData = historyManager.getHistory(currentFile)
+        await window.api.historySave(currentFile, historyData)
+      }, 2000)
+    }
 
     console.log('[editor] Content changed:', e.changes.length, 'changes')
     
-    // Activar para CUALQUIER typing - ultra permisivo
-    const isTyping = e.changes?.some(ch => 
+    // Autocompletado automático como Cursor/Windsurf
+    const isTypingForGhost = e.changes?.some(ch => 
       ch.text && ch.rangeLength === 0 && ch.text.length <= 20
     )
 
-    console.log('[editor] Is typing:', isTyping)
-
-    if (!isTyping) return
+    if (!isTypingForGhost) return
 
     // Cancelar petición anterior si existe
     if (currentRequest) {
@@ -159,7 +1675,7 @@ export async function createEditor(container, state, themeMgr = null) {
     triggerTimer = setTimeout(() => {
       console.log('[editor] Triggering inline completion...')
       editor.trigger('keyboard', 'editor.action.inlineSuggest.trigger', {})
-    }, 200) // Reducido a 200ms para más rapidez
+    }, 200)
   })
 
   // Aceptar ghost text con Tab
@@ -193,6 +1709,96 @@ export async function createEditor(container, state, themeMgr = null) {
     state.markSaved(state.currentFile, content)
     state.emit('fileSaved', state.currentFile)
   })
+
+  // ── Historial: Undo / Redo ───────────────────────────────────────────
+  
+  // Undo: Ctrl+Z
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyZ, () => {
+    const prevState = historyManager.undo(state.currentFile)
+    if (prevState) {
+      applyHistoryState(editor, prevState)
+    }
+  })
+
+  // Redo: Ctrl+Shift+Z o Ctrl+Y
+  const redoAction = () => {
+    const nextState = historyManager.redo(state.currentFile)
+    if (nextState) {
+      applyHistoryState(editor, nextState)
+    }
+  }
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyZ, redoAction)
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyY, redoAction)
+
+  // Timeline Visual: Ctrl+Alt+Z
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.KeyZ, () => {
+    state.emit('toggleHistoryTimeline')
+  })
+
+  // Formatear Documento: Shift+Alt+F
+  editor.addCommand(monaco.KeyMod.Shift | monaco.KeyMod.Alt | monaco.KeyCode.KeyF, () => {
+    editor.getAction('editor.action.formatDocument').run()
+  })
+
+  // Registrar Formateador (DocumentFormattingEditProvider)
+  monaco.languages.registerDocumentFormattingEditProvider('*', {
+    async provideDocumentFormattingEdits(model) {
+      const { formatCode } = await import('../utils/formatter.js')
+      const formatted = await formatCode(model.getValue(), model.getLanguageId())
+      return [{
+        range: model.getFullModelRange(),
+        text: formatted
+      }]
+    }
+  })
+
+  // Auto-formateo al pulsar Tab
+  editor.onKeyDown(async (e) => {
+    if (e.keyCode === monaco.KeyCode.Tab && !e.shiftKey && !e.ctrlKey && !e.altKey) {
+      const position = editor.getPosition()
+      const model = editor.getModel()
+      if (!model) return
+
+      const lineContent = model.getLineContent(position.lineNumber)
+      if (lineContent.trim().length > 0) {
+        // Ejecutar formateo de la acción de Monaco (o nuestro formateador para la línea)
+        // Usamos un pequeño delay para dejar que Monaco procese el tab primero o lo hacemos antes
+        const { formatCode } = await import('../utils/formatter.js')
+        const formatted = await formatCode(lineContent, model.getLanguageId())
+        
+        if (formatted.trim() !== lineContent.trim()) {
+          editor.executeEdits('auto-format', [{
+            range: new monaco.Range(position.lineNumber, 1, position.lineNumber, lineContent.length + 1),
+            text: formatted
+          }])
+        }
+      }
+    }
+  })
+
+  function applyHistoryState(ed, hs) {
+    // Usar executeEdits para que la operación sea tratada como una sola unidad
+    // pero sin que nuestra propia captura de onDidChangeModelContent lo procese de nuevo
+    // (HistoryManager ya maneja que si el contenido es igual no duplica)
+    const model = ed.getModel()
+    if (!model) return
+
+    ed.executeEdits('history-nav', [{
+      range: model.getFullModelRange(),
+      text: hs.content,
+      forceMoveMarkers: true
+    }])
+
+    if (hs.cursor) ed.setPosition(hs.cursor)
+    if (hs.selection) ed.setSelection(hs.selection)
+    ed.revealPositionInCenter(hs.cursor || { lineNumber: 1, column: 1 })
+    
+    // Emitir cambio para actualizar UI
+    state.emit('historyChanged', { 
+      filePath: state.currentFile, 
+      history: historyManager.getHistory(state.currentFile) 
+    })
+  }
 
   // ── Selección → AI (Ctrl+L) ───────────────────────────────────────────
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyL, () => {
@@ -229,10 +1835,20 @@ export async function createEditor(container, state, themeMgr = null) {
       monaco.editor.setModelLanguage(model, lang)
     }
     editor.setModel(model)
+    
+    // Configurar el editor específicamente para este lenguaje
+    configureEditorForLanguage(editor, lang, filePath)
+    
     // Restaurar posición del cursor si existía
     const tab = state.getTab(filePath)
     if (tab?.cursorPos) editor.setPosition(tab.cursorPos)
     editor.focus()
+
+    // Cargar historial persistente
+    window.api.historyGet(filePath).then(data => {
+      if (data) historyManager.loadHistory(filePath, data)
+    })
+
     // Limpiar decoraciones IA al cambiar de archivo
     clearAIDecorations()
 
@@ -246,9 +1862,7 @@ export async function createEditor(container, state, themeMgr = null) {
     clearAIDecorations()
   })
 
-  editor.onDidChangeModelContent(() => {
-    if (state.currentFile) state.markDirty(state.currentFile)
-  })
+  // (Eliminado el onDidChangeModelContent duplicado que solo marcaba dirty)
 
   // Guardar posición del cursor al cambiar de tab
   editor.onDidChangeCursorPosition(e => {

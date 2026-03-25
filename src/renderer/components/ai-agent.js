@@ -7,17 +7,15 @@
 // UTILIDADES
 // ============================================================================
 
-const escapeHtml = (s) => String(s)
-  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-  .replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+import { escapeHtml, renderMarkdown } from '../utils/markdown.js';
 
-const generateId = () => Math.random().toString(36).substring(2,11);
+const generateId = () => Math.random().toString(36).substring(2, 11);
 
 const formatDate = (d) => {
   const now = new Date(), date = new Date(d);
   if (now.toDateString() === date.toDateString())
-    return date.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
-  return date.toLocaleDateString('es-ES',{day:'numeric',month:'short'});
+    return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
 };
 
 const DANGEROUS_COMMAND_PATTERNS = [
@@ -50,27 +48,7 @@ function hasDangerousCommand(command = '') {
   return DANGEROUS_COMMAND_PATTERNS.some((pattern) => pattern.test(command));
 }
 
-function renderMarkdown(text) {
-  if (!text) return '';
-  let html = escapeHtml(text)
-    .replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
-      const hl = window.hljs
-        ? window.hljs.highlightAuto(code.trim(), lang ? [lang] : undefined).value
-        : escapeHtml(code.trim());
-      return `<div class="ai-code-block"><div class="ai-code-header"><span class="ai-code-lang">${lang||'code'}</span><div class="ai-code-actions"></div></div><div class="ai-code-body"><pre><code class="language-${lang||'plaintext'}">${hl}</code></pre></div></div>`;
-    })
-    .replace(/`([^`\n]+)`/g,'<code class="inline-code">$1</code>')
-    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g,'<em>$1</em>')
-    .replace(/^#{3}\s(.+)$/gm,'<h3>$1</h3>')
-    .replace(/^#{2}\s(.+)$/gm,'<h2>$1</h2>')
-    .replace(/^#{1}\s(.+)$/gm,'<h1>$1</h1>')
-    .replace(/^[-*]\s(.+)$/gm,'<li>$1</li>')
-    .replace(/(<li>[\s\S]*?<\/li>(\s*<li>[\s\S]*?<\/li>)*)/g,'<ul>$1</ul>')
-    .replace(/\n\n/g,'</p><p>')
-    .replace(/\n/g,'<br>');
-  return `<p>${html}</p>`;
-}
+// renderMarkdown is now imported from ../utils/markdown.js
 
 // ============================================================================
 // CLASE PRINCIPAL
@@ -79,23 +57,23 @@ function renderMarkdown(text) {
 export class AIAgent {
   constructor({ container, state }) {
     this.container = container;
-    this.state     = state;
+    this.state = state;
 
-    this.messages           = [];
-    this.activeTab          = 'agent';
-    this.activeModel        = state.aiModel || 'deepseek-coder';
-    this.provider           = localStorage.getItem('ide_provider') || 'ollama';
-    this.deepseekApiKey     = localStorage.getItem('ide_deepseek_key') || '';
-    this.groqApiKey         = localStorage.getItem('ide_groq_key') || '';
+    this.messages = [];
+    this.activeTab = 'agent';
+    this.activeModel = state.aiModel || 'deepseek-coder';
+    this.provider = localStorage.getItem('ide_provider') || 'ollama';
+    this.deepseekApiKey = localStorage.getItem('ide_deepseek_key') || '';
+    this.groqApiKey = localStorage.getItem('ide_groq_key') || '';
     this.activeConversation = null;
-    this.isStreaming        = false;
-    this.pendingContext     = null;
-    this.ollamaModels       = [];
-    this.reqCounter         = 0;
-    this.abortController    = null;
+    this.isStreaming = false;
+    this.pendingContext = null;
+    this.ollamaModels = [];
+    this.reqCounter = 0;
+    this.abortController = null;
     // Confirmación solo para delete_file (no para write/create)
-    this.confirmDelete      = true;
-    this.confirmCommands    = true;
+    this.confirmDelete = true;
+    this.confirmCommands = true;
 
     this.conversations = this.loadConversations();
   }
@@ -118,9 +96,9 @@ export class AIAgent {
         <!-- HEADER -->
         <div class="ai-agent-header">
           <div class="ai-tabs">
-            <button class="ai-tab ${this.activeTab==='agent'?'active':''}" data-tab="agent">Agente</button>
-            <button class="ai-tab ${this.activeTab==='chat'?'active':''}"  data-tab="chat">Chat</button>
-            <button class="ai-tab ${this.activeTab==='history'?'active':''}" data-tab="history">Historial</button>
+            <button class="ai-tab ${this.activeTab === 'agent' ? 'active' : ''}" data-tab="agent">Agente</button>
+            <button class="ai-tab ${this.activeTab === 'chat' ? 'active' : ''}"  data-tab="chat">Chat</button>
+            <button class="ai-tab ${this.activeTab === 'history' ? 'active' : ''}" data-tab="history">Historial</button>
           </div>
           <span class="ai-model-badge" id="ai-model-badge">${escapeHtml(this.activeModel)}</span>
           <div class="ai-header-actions">
@@ -138,32 +116,32 @@ export class AIAgent {
           <div class="ai-settings-group">
             <label>Proveedor</label>
             <select id="ai-provider-select" class="ai-select">
-              <option value="ollama"   ${this.provider==='ollama'  ?'selected':''}>Ollama (Local)</option>
-              <option value="deepseek" ${this.provider==='deepseek'?'selected':''}>DeepSeek API</option>
-              <option value="groq"     ${this.provider==='groq'    ?'selected':''}>Groq API</option>
+              <option value="ollama"   ${this.provider === 'ollama' ? 'selected' : ''}>Ollama (Local)</option>
+              <option value="deepseek" ${this.provider === 'deepseek' ? 'selected' : ''}>DeepSeek API</option>
+              <option value="groq"     ${this.provider === 'groq' ? 'selected' : ''}>Groq API</option>
             </select>
           </div>
           <div class="ai-settings-group">
             <label>Modelo</label>
             <select id="ai-model-select" class="ai-select"><option>Cargando...</option></select>
           </div>
-          <div class="ai-settings-group" id="ai-apikey-group" style="display:${this.provider==='deepseek'?'block':'none'}">
+          <div class="ai-settings-group" id="ai-apikey-group" style="display:${this.provider === 'deepseek' ? 'block' : 'none'}">
             <label>API Key DeepSeek</label>
             <input type="password" id="ai-apikey-input" class="ai-input" value="${escapeHtml(this.deepseekApiKey)}" placeholder="sk-...">
           </div>
-          <div class="ai-settings-group" id="ai-groqkey-group" style="display:${this.provider==='groq'?'block':'none'}">
+          <div class="ai-settings-group" id="ai-groqkey-group" style="display:${this.provider === 'groq' ? 'block' : 'none'}">
             <label>API Key Groq</label>
             <input type="password" id="ai-groqkey-input" class="ai-input" value="${escapeHtml(this.groqApiKey)}" placeholder="gsk_...">
           </div>
           <div class="ai-settings-group">
             <label class="ai-checkbox-label">
-              <input type="checkbox" id="ai-confirm-delete" ${this.confirmDelete?'checked':''}>
+              <input type="checkbox" id="ai-confirm-delete" ${this.confirmDelete ? 'checked' : ''}>
               Confirmar antes de eliminar archivos
             </label>
           </div>
           <div class="ai-settings-group">
             <label class="ai-checkbox-label">
-              <input type="checkbox" id="ai-confirm-commands" ${this.confirmCommands?'checked':''}>
+              <input type="checkbox" id="ai-confirm-commands" ${this.confirmCommands ? 'checked' : ''}>
               Confirmar antes de ejecutar comandos
             </label>
           </div>
@@ -268,7 +246,7 @@ export class AIAgent {
     );
 
     // Send / stop
-    const input   = this.container.querySelector('#ai-input');
+    const input = this.container.querySelector('#ai-input');
     const sendBtn = this.container.querySelector('#ai-btn-send');
     const stopBtn = this.container.querySelector('#ai-btn-stop');
 
@@ -287,7 +265,7 @@ export class AIAgent {
     this.container.querySelector('#ai-btn-new-chat').addEventListener('click', () => this.newConversation());
 
     // Settings toggle
-    const settingsBtn   = this.container.querySelector('#ai-btn-settings');
+    const settingsBtn = this.container.querySelector('#ai-btn-settings');
     const settingsPanel = this.container.querySelector('#ai-settings-panel');
     settingsBtn.addEventListener('click', () => {
       settingsPanel.style.display = settingsPanel.style.display === 'none' ? 'block' : 'none';
@@ -298,8 +276,8 @@ export class AIAgent {
       this.provider = e.target.value;
       localStorage.setItem('ide_provider', this.provider);
       this.container.querySelector('#ai-apikey-group').style.display = this.provider === 'deepseek' ? 'block' : 'none';
-      this.container.querySelector('#ai-groqkey-group').style.display = this.provider === 'groq'     ? 'block' : 'none';
-      if (this.provider === 'groq')      this.activeModel = 'meta-llama/llama-4-scout-17b-16e-instruct';
+      this.container.querySelector('#ai-groqkey-group').style.display = this.provider === 'groq' ? 'block' : 'none';
+      if (this.provider === 'groq') this.activeModel = 'meta-llama/llama-4-scout-17b-16e-instruct';
       else if (this.provider === 'deepseek') this.activeModel = 'deepseek-chat';
       this.state.aiModel = this.activeModel;
       this.loadModelList();
@@ -331,18 +309,18 @@ export class AIAgent {
     });
 
     // Context attach
-    const attachBtn    = this.container.querySelector('#ai-btn-attach');
-    const contextMenu  = this.container.querySelector('#ai-context-menu');
+    const attachBtn = this.container.querySelector('#ai-btn-attach');
+    const contextMenu = this.container.querySelector('#ai-context-menu');
     attachBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       const r = attachBtn.getBoundingClientRect();
-      contextMenu.style.cssText = `display:block;left:${r.left}px;top:${r.bottom+4}px`;
+      contextMenu.style.cssText = `display:block;left:${r.left}px;top:${r.bottom + 4}px`;
     });
     this.container.querySelectorAll('.ai-context-item').forEach(item =>
-      item.addEventListener('click', () => { this.attachContext(item.dataset.context); contextMenu.style.display='none'; })
+      item.addEventListener('click', () => { this.attachContext(item.dataset.context); contextMenu.style.display = 'none'; })
     );
     document.addEventListener('click', (e) => {
-      if (!contextMenu.contains(e.target) && e.target !== attachBtn) contextMenu.style.display='none';
+      if (!contextMenu.contains(e.target) && e.target !== attachBtn) contextMenu.style.display = 'none';
     });
 
     // Suggestion buttons
@@ -361,7 +339,7 @@ export class AIAgent {
     this.container.querySelector('#ai-history-list')?.addEventListener('click', (e) => {
       const item = e.target.closest('.ai-history-item');
       if (!item) return;
-      if (e.target.closest('.ai-btn-load'))   this.loadConversation(item.dataset.id);
+      if (e.target.closest('.ai-btn-load')) this.loadConversation(item.dataset.id);
       else if (e.target.closest('.ai-btn-delete')) this.deleteConversation(item.dataset.id);
       else this.loadConversation(item.dataset.id);
     });
@@ -369,7 +347,7 @@ export class AIAgent {
     // State events
     this.state.on('sendToAI', (data) => {
       if (!data?.code) return;
-      this.pendingContext = { type:'selection', code:data.code, file:data.file, lang:data.lang };
+      this.pendingContext = { type: 'selection', code: data.code, file: data.file, lang: data.lang };
       this.updateContextDisplay();
       if (this.activeTab !== 'agent') this.switchTab('agent');
     });
@@ -377,20 +355,20 @@ export class AIAgent {
 
   switchTab(tab) {
     this.activeTab = tab;
-    this.container.querySelectorAll('.ai-tab').forEach(t => t.classList.toggle('active', t.dataset.tab===tab));
-    const chatView    = this.container.querySelector('#ai-chat-view');
+    this.container.querySelectorAll('.ai-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+    const chatView = this.container.querySelector('#ai-chat-view');
     const historyView = this.container.querySelector('#ai-history-view');
-    const floatInput  = this.container.querySelector('#ai-floating-input');
+    const floatInput = this.container.querySelector('#ai-floating-input');
 
     if (tab === 'history') {
-      chatView.style.display    = 'none';
+      chatView.style.display = 'none';
       historyView.style.display = 'block';
-      floatInput.style.display  = 'none';
+      floatInput.style.display = 'none';
       this.container.querySelector('#ai-history-list').innerHTML = this.renderHistoryList();
     } else {
-      chatView.style.display    = 'flex';
+      chatView.style.display = 'flex';
       historyView.style.display = 'none';
-      floatInput.style.display  = 'flex';
+      floatInput.style.display = 'flex';
     }
   }
 
@@ -450,51 +428,51 @@ export class AIAgent {
 
   async attachContext(type) {
     const editor = this.state.editorInstance;
-    const file   = this.state.currentFile;
+    const file = this.state.currentFile;
 
     switch (type) {
       case 'active-file':
-        if (!editor || !file) { this.showStatus('No hay archivo activo','error'); return; }
-        this.pendingContext = { type:'file', code:editor.getValue(), file, lang:file.split('.').pop()||'text' };
+        if (!editor || !file) { this.showStatus('No hay archivo activo', 'error'); return; }
+        this.pendingContext = { type: 'file', code: editor.getValue(), file, lang: file.split('.').pop() || 'text' };
         break;
       case 'selection': {
-        if (!editor || !file) { this.showStatus('No hay archivo activo','error'); return; }
-        const sel  = editor.getSelection();
-        const text = editor.getModel()?.getValueInRange(sel)||'';
-        if (!text.trim()) { this.showStatus('No hay texto seleccionado','error'); return; }
-        this.pendingContext = { type:'selection', code:text, file, lang:file.split('.').pop()||'text' };
+        if (!editor || !file) { this.showStatus('No hay archivo activo', 'error'); return; }
+        const sel = editor.getSelection();
+        const text = editor.getModel()?.getValueInRange(sel) || '';
+        if (!text.trim()) { this.showStatus('No hay texto seleccionado', 'error'); return; }
+        this.pendingContext = { type: 'selection', code: text, file, lang: file.split('.').pop() || 'text' };
         break;
       }
       case 'project':
-        if (!this.state.currentFolder) { this.showStatus('No hay carpeta abierta','error'); return; }
+        if (!this.state.currentFolder) { this.showStatus('No hay carpeta abierta', 'error'); return; }
         try {
           const r = await window.api.agentGetProjectStructure(this.state.currentFolder, 3);
-          this.pendingContext = { type:'project', tree:r.tree, folder:this.state.currentFolder };
-        } catch(err) { this.showStatus('Error: '+err.message,'error'); return; }
+          this.pendingContext = { type: 'project', tree: r.tree, folder: this.state.currentFolder };
+        } catch (err) { this.showStatus('Error: ' + err.message, 'error'); return; }
         break;
     }
 
     this.updateContextDisplay();
-    this.showStatus('Contexto adjunto ✓','success');
+    this.showStatus('Contexto adjunto ✓', 'success');
   }
 
   updateContextDisplay() {
-    const bar   = this.container.querySelector('#ai-context-bar');
+    const bar = this.container.querySelector('#ai-context-bar');
     const chips = this.container.querySelector('#ai-context-chips');
-    if (!this.pendingContext) { bar.style.display='none'; chips.innerHTML=''; return; }
+    if (!this.pendingContext) { bar.style.display = 'none'; chips.innerHTML = ''; return; }
 
     const labels = {
-      file:      `📄 ${this.pendingContext.file?.split(/[\\/]/).pop()}`,
+      file: `📄 ${this.pendingContext.file?.split(/[\\/]/).pop()}`,
       selection: `✂️ Selección de ${this.pendingContext.file?.split(/[\\/]/).pop()}`,
-      project:   `📁 Proyecto: ${this.pendingContext.folder?.split(/[\\/]/).pop()}`
+      project: `📁 Proyecto: ${this.pendingContext.folder?.split(/[\\/]/).pop()}`
     };
     bar.style.display = 'block';
     chips.innerHTML = `
       <div class="ai-context-chip">
-        <span>${labels[this.pendingContext.type]||'Contexto'}</span>
+        <span>${labels[this.pendingContext.type] || 'Contexto'}</span>
         <button class="ai-chip-remove">×</button>
       </div>`;
-    chips.querySelector('.ai-chip-remove').addEventListener('click',()=>{ this.pendingContext=null; this.updateContextDisplay(); });
+    chips.querySelector('.ai-chip-remove').addEventListener('click', () => { this.pendingContext = null; this.updateContextDisplay(); });
   }
 
   // ==========================================================================
@@ -503,53 +481,61 @@ export class AIAgent {
 
   buildSystemPrompt() {
     if (this.activeTab !== 'agent') {
-      return `Eres un asistente de programación experto en NovaIDE. Responde en español. Usa bloques de código con el lenguaje correcto.`;
+      return `Eres un asistente de programación experto en nvcODE. Responde en español. Usa bloques de código con el lenguaje correcto.`;
     }
 
     const folder = this.state.currentFolder || '(ninguna)';
-    const file   = this.state.currentFile   || '(ninguno)';
+    const file = this.state.currentFile || '(ninguno)';
 
-    let prompt = `You are DeepSeek, a powerful AI coding agent inside a VS Code fork.
-You have tools to read/write/delete/rename files, list/create directories, search for text, and get workspace structure.
-Rules: always read files before editing; search before guessing paths; confirm before deleting; reply in the user's language; summarise changes at the end.
+    let prompt = `You are Nova AI, a world-class expert software engineer and coding assistant.
+You operate inside NVCode, a powerful Electron-based IDE.
+Your goal is to help the user with coding tasks, from simple bug fixes to creating entire projects.
 
-Workspace: ${folder}
+== CRITICAL PROTOCOL: THINK BEFORE ACTING ==
+Before every single response or tool call, you MUST analyze the situation and plan your steps inside a <thought> block in SPANISH.
+Format:
+<thought>
+1. Análisis: ¿Qué me ha pedido el usuario? ¿Qué archivos tengo abiertos?
+2. Descubrimiento: ¿Necesito leer algún archivo o ver la estructura del proyecto? (SIEMPRE lee antes de editar).
+3. Plan: ¿Qué pasos voy a seguir?
+4. Herramientas: ¿Qué herramienta voy a usar ahora?
+</thought>
+[Your tool call or final response here]
+
+Rules:
+- RESPOND AND THINK IN SPANISH (Español).
+- **NON-NEGOTIABLE**: If you need to create or modify a file, you MUST use the \`write_file\` tool. Simply writing the code in a markdown block is USELESS and will NOT save anything.
+- **FORBIDDEN**: Do not use \`npx create-react-app\`. It is too slow. Instead, create files manually (package.json, src/App.jsx, etc.) using \`write_file\`.
+- NEVER assume a file exists; always use \`read_file\` or \`list_files\` first.
+- For WEB projects: Use modern React + Tailwind CSS.
+- Break down complex tasks into small, multiple tool calls. Use as many iterations as needed.
+- If a tool fails, read the error and try an alternative.
 
 == TOOL FORMAT ==
-Output ONLY raw JSON — no markdown fences, no text before or after:
+You can output tools in two ways:
+1. RAW JSON: {"tool":"name","params":{...}}
+2. MARKDOWN BLOCK:
+\`\`\`json
 {"tool":"name","params":{...}}
-If you do NOT need a tool, respond normally in Spanish with a concise final answer.
-Never mix a tool call and normal prose in the same response.
-
-== FILE STRUCTURE RULES ==
-- Parent folders are created automatically when writing a file.
-- Web projects: index.html at root, css/style.css, js/main.js (never flat).
-- Never use create_directory before write_file — write_file handles it.
+\`\`\`
 
 == AVAILABLE TOOLS ==
-write_file          {"tool":"write_file","params":{"path":"css/style.css","content":"..."}}
-create_file         {"tool":"create_file","params":{"path":"src/new-file.js","content":"..."}}
-When creating new files, use create_file or write_file directly instead of overplanning.
-When editing existing files, prefer read_file first and then write_file with the final full content.
-read_file           {"tool":"read_file","params":{"path":"src/app.js"}}
-create_directory    {"tool":"create_directory","params":{"path":"src/components"}}
-delete_file         {"tool":"delete_file","params":{"path":"old.js"}}
-move_file           {"tool":"move_file","params":{"source":"a.js","destination":"b.js"}}
+write_file          {"tool":"write_file","params":{"path":"src/App.jsx","content":"..."}}
+read_file           {"tool":"read_file","params":{"path":"package.json"}}
 list_files          {"tool":"list_files","params":{"directory":"src"}}
 get_project_structure {"tool":"get_project_structure","params":{}}
-search_in_files     {"tool":"search_in_files","params":{"query":"text","directory":"src"}}
 run_command         {"tool":"run_command","params":{"command":"npm install"}}
-get_open_file       {"tool":"get_open_file","params":{}}
+get_diagnostics     {"tool":"get_diagnostics","params":{}} -> Returns Linter/Editor errors.
 open_file           {"tool":"open_file","params":{"path":"index.html"}}
-insert_at_cursor    {"tool":"insert_at_cursor","params":{"text":"code"}}
-replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
+delete_file         {"tool":"delete_file","params":{"path":"old.js"}}
+search_in_files     {"tool":"search_in_files","params":{"query":"text"}}`;
 
     // Contexto del editor
     const editor = this.state.editorInstance;
     if (editor && file && file !== '(ninguno)') {
-      const content  = editor.getValue();
-      const lang     = file.split('.').pop() || 'text';
-      const sel      = editor.getModel()?.getValueInRange(editor.getSelection()) || '';
+      const content = editor.getValue();
+      const lang = file.split('.').pop() || 'text';
+      const sel = editor.getModel()?.getValueInRange(editor.getSelection()) || '';
       prompt += `\n\n== ARCHIVO ACTIVO ==\nPath: ${file}\nLenguaje: ${lang}`;
       if (sel.trim()) prompt += `\nSelección:\n\`\`\`${lang}\n${sel}\n\`\`\``;
       if (content.length < 5000) prompt += `\nContenido:\n\`\`\`${lang}\n${content}\n\`\`\``;
@@ -572,16 +558,16 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
     }
   }
 
-  formatFileTree(tree, indent='') {
-    if (!tree||!Array.isArray(tree)) return '';
+  formatFileTree(tree, indent = '') {
+    if (!tree || !Array.isArray(tree)) return '';
     return tree.map(n => {
       const icon = n.isDirectory ? '📁' : '📄';
-      const children = n.isDirectory&&n.children ? '\n'+this.formatFileTree(n.children,indent+'  ') : '';
+      const children = n.isDirectory && n.children ? '\n' + this.formatFileTree(n.children, indent + '  ') : '';
       return `${indent}${icon} ${n.name}${children}`;
     }).join('\n');
   }
 
-  buildConversationWindow(limit = 12) {
+  buildConversationWindow(limit = 24) {
     return this.messages.slice(-limit).map((msg) => {
       const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
       return {
@@ -598,14 +584,14 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
   async handleSend() {
     if (this.isStreaming) return;
     const input = this.container.querySelector('#ai-input');
-    const text  = input.value.trim();
+    const text = input.value.trim();
     if (!text) return;
 
     input.value = '';
     input.style.height = 'auto';
 
     const fullText = this.buildUserMessage(text);
-    this.messages.push({ role:'user', content:fullText });
+    this.messages.push({ role: 'user', content: fullText });
     this.appendMessage('user', text);
 
     this.pendingContext = null;
@@ -633,15 +619,15 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
       return;
     }
 
-    const signal      = this.abortController?.signal;
-    const reqId       = ++this.reqCounter;
+    const signal = this.abortController?.signal;
+    const reqId = ++this.reqCounter;
     const historyWindow = this.buildConversationWindow();
     const fullMessages = [
-      { role:'system', content:this.buildSystemPrompt() },
+      { role: 'system', content: this.buildSystemPrompt() },
       ...historyWindow
     ];
 
-    const msgEl = this.appendMessage('assistant','',true);
+    const msgEl = this.appendMessage('assistant', '', true);
     let fullResponse = '';
     let pendingRender = false;
     let latestRendered = '';
@@ -662,9 +648,9 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
         }, 33);
       };
 
-      if      (this.provider === 'ollama')   await this.streamOllama(fullMessages, onToken, signal);
-      else if (this.provider === 'groq')     await this.streamGroq(fullMessages, onToken, signal);
-      else                                   await this.streamDeepSeek(fullMessages, onToken, signal);
+      if (this.provider === 'ollama') await this.streamOllama(fullMessages, onToken, signal);
+      else if (this.provider === 'groq') await this.streamGroq(fullMessages, onToken, signal);
+      else await this.streamDeepSeek(fullMessages, onToken, signal);
 
       if (signal?.aborted) return;
 
@@ -674,7 +660,7 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
       const visibleText = this.stripToolCalls(fullResponse);
       latestRendered = visibleText;
       this.finalizeMessage(msgEl, visibleText || (toolCalls.length ? 'Usando herramientas para resolverlo...' : ''));
-      this.messages.push({ role:'assistant', content:fullResponse });
+      this.messages.push({ role: 'assistant', content: fullResponse });
 
       // ReAct loop
       if (toolCalls.length > 0) {
@@ -721,17 +707,24 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
   // Ollama corre en localhost — fetch directo desde renderer funciona sin CORS
   async streamOllama(messages, onToken, signal) {
     const res = await fetch('http://localhost:11434/api/chat', {
-      method:'POST', signal,
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ model:this.activeModel, messages, stream:true, options:{ temperature:0.3 } })
+      method: 'POST', signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: this.activeModel, messages, stream: true, options: { temperature: 0.3 } })
     }).catch(() => { throw new Error('Ollama no está ejecutándose. Inicia Ollama o cambia de proveedor en Configuración.'); });
     if (!res.ok) throw new Error(`Ollama error ${res.status}`);
     const reader = res.body.getReader(), dec = new TextDecoder();
+    let buffer = '';
     while (true) {
       const { done, value } = await reader.read();
       if (done || signal?.aborted) break;
-      for (const line of dec.decode(value).split('\n').filter(Boolean)) {
-        try { onToken(JSON.parse(line).message?.content||''); } catch {}
+
+      buffer += dec.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try { onToken(JSON.parse(line).message?.content || ''); } catch { }
       }
     }
   }
@@ -756,9 +749,9 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
       const handler = (data) => {
         if (data.reqId !== reqId) return;
         if (signal?.aborted) { cleanup(); resolve(); return; }
-        if (data.error)      { cleanup(); reject(new Error(data.error)); return; }
-        if (data.done)       { cleanup(); resolve(); return; }
-        if (data.token)      onToken(data.token);
+        if (data.error) { cleanup(); reject(new Error(data.error)); return; }
+        if (data.done) { cleanup(); resolve(); return; }
+        if (data.token) onToken(data.token);
       };
 
       cleanup = window.api.onAiToken(handler);
@@ -784,39 +777,39 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
   // ==========================================================================
 
   parseToolCalls(text) {
-    // Eliminar bloques de código para evitar falsos positivos
-    const stripped = text.replace(/```[\s\S]*?```/g,'').replace(/`[^`\n]+`/g,'');
+    // Ya NO eliminamos bloques de código, buscamos el JSON donde sea
+    const stripped = text; // Mantenemos el texto completo pero podemos limpiar ruidos si quisiéramos
     const calls = [];
-    const seen  = new Set();
+    const seen = new Set();
     let i = 0;
 
     while (i < stripped.length) {
       if (stripped[i] !== '{') { i++; continue; }
 
       // Extraer JSON completo con stack
-      let depth=0, j=i, inStr=false, esc=false;
+      let depth = 0, j = i, inStr = false, esc = false;
       while (j < stripped.length) {
         const ch = stripped[j];
-        if (esc)                    { esc=false; j++; continue; }
-        if (ch==='\\'&&inStr)       { esc=true;  j++; continue; }
-        if (ch==='"')               { inStr=!inStr; j++; continue; }
+        if (esc) { esc = false; j++; continue; }
+        if (ch === '\\' && inStr) { esc = true; j++; continue; }
+        if (ch === '"') { inStr = !inStr; j++; continue; }
         if (!inStr) {
-          if (ch==='{') depth++;
-          else if (ch==='}') { depth--; if (depth===0) { j++; break; } }
+          if (ch === '{') depth++;
+          else if (ch === '}') { depth--; if (depth === 0) { j++; break; } }
         }
         j++;
       }
 
-      if (depth===0 && j>i) {
+      if (depth === 0 && j > i) {
         try {
-          const obj = JSON.parse(stripped.slice(i,j));
+          const obj = JSON.parse(stripped.slice(i, j));
           const toolName = obj.tool || obj.action || obj.name;
-          if (toolName && typeof toolName==='string') {
+          if (toolName && typeof toolName === 'string') {
             const params = obj.params || obj.parameters || obj.arguments || {};
-            const key = `${toolName}:${params.path||params.source||params.directory||params.command||params.query||JSON.stringify(params).slice(0,60)}`;
-            if (!seen.has(key)) { seen.add(key); calls.push({ tool:toolName, params }); }
+            const key = `${toolName}:${params.path || params.source || params.directory || params.command || params.query || JSON.stringify(params).slice(0, 60)}`;
+            if (!seen.has(key)) { seen.add(key); calls.push({ tool: toolName, params }); }
           }
-        } catch {}
+        } catch { }
         i = j;
       } else { i++; }
     }
@@ -836,30 +829,30 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
   // Elimina todos los tool-call JSON del texto final (stack-based)
   stripToolCalls(text) {
     if (!text) return '';
-    let result='', i=0;
+    let result = '', i = 0;
     while (i < text.length) {
-      if (text[i]!=='{') { result+=text[i++]; continue; }
-      let depth=0, j=i, inStr=false, esc=false;
+      if (text[i] !== '{') { result += text[i++]; continue; }
+      let depth = 0, j = i, inStr = false, esc = false;
       while (j < text.length) {
         const ch = text[j];
-        if (esc)               { esc=false; j++; continue; }
-        if (ch==='\\'&&inStr)  { esc=true;  j++; continue; }
-        if (ch==='"')          { inStr=!inStr; j++; continue; }
+        if (esc) { esc = false; j++; continue; }
+        if (ch === '\\' && inStr) { esc = true; j++; continue; }
+        if (ch === '"') { inStr = !inStr; j++; continue; }
         if (!inStr) {
-          if (ch==='{') depth++;
-          else if (ch==='}') { depth--; if (depth===0){ j++; break; } }
+          if (ch === '{') depth++;
+          else if (ch === '}') { depth--; if (depth === 0) { j++; break; } }
         }
         j++;
       }
-      if (depth===0 && j>i) {
+      if (depth === 0 && j > i) {
         try {
-          const obj = JSON.parse(text.slice(i,j));
-          if (obj && typeof obj.tool==='string') { i=j; continue; }
-        } catch {}
+          const obj = JSON.parse(text.slice(i, j));
+          if (obj && typeof obj.tool === 'string') { i = j; continue; }
+        } catch { }
       }
-      result+=text[i++];
+      result += text[i++];
     }
-    return result.replace(/\n{3,}/g,'\n\n').trim();
+    return result.replace(/\n{3,}/g, '\n\n').trim();
   }
 
   // ==========================================================================
@@ -873,7 +866,7 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
       const ok = confirm(this.buildToolConfirmationMessage(tool, params));
       if (!ok) {
         this.addToolStep(msgEl, 'cancelled', tool, 'Cancelado por el usuario');
-        this.messages.push({ role:'user', content:`[Herramienta ${tool} cancelada]` });
+        this.messages.push({ role: 'user', content: `[Herramienta ${tool} cancelada]` });
         return false;
       }
     }
@@ -883,46 +876,47 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
       const ok = confirm(`El agente quiere ELIMINAR:\n${params.path}\n\n¿Confirmar?`);
       if (!ok) {
         this.addToolStep(msgEl, 'cancelled', tool, 'Cancelado por el usuario');
-        this.messages.push({ role:'user', content:`[Herramienta ${tool} cancelada]` });
+        this.messages.push({ role: 'user', content: `[Herramienta ${tool} cancelada]` });
         return false;
       }
     }
 
-    this.addToolStep(msgEl, 'running', tool, this.describeAction(tool,params));
+    this.addToolStep(msgEl, 'running', tool, this.describeAction(tool, params));
 
     try {
       const result = await this.executeTool(tool, params);
-      const summary = typeof result==='string'
-        ? result.slice(0,300)
-        : JSON.stringify(result).slice(0,300);
+      const summary = typeof result === 'string'
+        ? result.slice(0, 300)
+        : JSON.stringify(result).slice(0, 300);
       this.addToolStep(msgEl, 'done', tool, summary);
-      this.messages.push({ role:'user', content:`[Resultado de "${tool}"]\n${typeof result==='string'?result:JSON.stringify(result,null,2)}` });
+      this.messages.push({ role: 'user', content: `[Resultado de "${tool}"]\n${typeof result === 'string' ? result : JSON.stringify(result, null, 2)}` });
       return true;
     } catch (err) {
       this.addToolStep(msgEl, 'error', tool, err.message);
-      this.messages.push({ role:'user', content:`[Error en "${tool}"]: ${err.message}` });
+      this.messages.push({ role: 'user', content: `[Error en "${tool}"]: ${err.message}` });
       return false;
     }
   }
 
   describeAction(tool, params) {
     const map = {
-      read_file:            `Leer ${params.path}`,
-      write_file:           `Escribir ${params.path}`,
-      create_file:          `Crear ${params.path}`,
-      create_directory:     `Crear carpeta ${params.path}`,
-      delete_file:          `Eliminar ${params.path}`,
-      move_file:            `Mover ${params.source} → ${params.destination}`,
-      list_files:           `Listar ${params.directory||'.'}`,
-      get_project_structure:'Estructura del proyecto',
-      search_in_files:      `Buscar "${params.query}"`,
-      run_command:          `$ ${params.command}`,
-      get_open_file:        'Archivo abierto en editor',
-      open_file:            `Abrir ${params.path}`,
-      insert_at_cursor:     'Insertar en cursor',
-      replace_selection:    'Reemplazar selección',
+      read_file: `Leer ${params.path}`,
+      write_file: `Escribir ${params.path}`,
+      create_file: `Crear ${params.path}`,
+      create_directory: `Crear carpeta ${params.path}`,
+      delete_file: `Eliminar ${params.path}`,
+      move_file: `Mover ${params.source} → ${params.destination}`,
+      list_files: `Listar ${params.directory || '.'}`,
+      get_project_structure: 'Estructura del proyecto',
+      search_in_files: `Buscar "${params.query}"`,
+      run_command: `$ ${params.command}`,
+      get_diagnostics: 'Obtener errores del editor',
+      get_open_file: 'Archivo abierto en editor',
+      open_file: `Abrir ${params.path}`,
+      insert_at_cursor: 'Insertar en cursor',
+      replace_selection: 'Reemplazar selección',
     };
-    return map[tool] || `${tool}(${JSON.stringify(params).slice(0,60)})`;
+    return map[tool] || `${tool}(${JSON.stringify(params).slice(0, 60)})`;
   }
 
   shouldConfirmToolCall(tool, params = {}) {
@@ -965,7 +959,7 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
       const base = this.state.currentFolder;
       if (!base) throw new Error('No hay carpeta abierta. Abre una carpeta primero.');
       const sep = base.includes('\\') ? '\\' : '/';
-      return base.replace(/[/\\]+$/,'') + sep + p.replace(/^[/\\]+/,'');
+      return base.replace(/[/\\]+$/, '') + sep + p.replace(/^[/\\]+/, '');
     };
 
     switch (tool) {
@@ -980,7 +974,7 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
       case 'write_file': {
         const fp = resolve(params.path);
         this.ensureWorkspacePath(fp, 'No se puede escribir fuera de la carpeta abierta.');
-        const r  = await window.api.agentWriteFile(fp, params.content ?? '');
+        const r = await window.api.agentWriteFile(fp, params.content ?? '');
         if (!r.success) throw new Error(r.error);
         this.syncEditorIfOpen(fp, params.content ?? '');
         if (!this.state.getTab(fp)) {
@@ -994,7 +988,7 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
       case 'create_file': {
         const fp = resolve(params.path);
         this.ensureWorkspacePath(fp, 'No se puede crear archivos fuera de la carpeta abierta.');
-        const r  = await window.api.agentCreateFile(fp, params.content ?? '');
+        const r = await window.api.agentCreateFile(fp, params.content ?? '');
         if (!r.success) throw new Error(r.error);
         this.syncEditorIfOpen(fp, params.content ?? '');
         this.state.openFile(fp, params.content ?? '');
@@ -1015,7 +1009,7 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
       case 'create_directory': {
         const fp = resolve(params.path);
         this.ensureWorkspacePath(fp, 'No se puede crear carpetas fuera de la carpeta abierta.');
-        const r  = await window.api.agentCreateDir(fp);
+        const r = await window.api.agentCreateDir(fp);
         if (!r.success) throw new Error(r.error);
         this.state.emit('refreshTree');
         return `Carpeta creada: ${fp}`;
@@ -1036,9 +1030,9 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
       case 'list_files': {
         const fp = resolve(params.directory || '.');
         this.ensureWorkspacePath(fp, 'No se puede listar fuera de la carpeta abierta.');
-        const r  = await window.api.agentListFiles(fp);
+        const r = await window.api.agentListFiles(fp);
         if (!r.success) throw new Error(r.error);
-        return r.files.map(f=>(f.isDirectory?'📁 ':'📄 ')+f.name).join('\n');
+        return r.files.map(f => (f.isDirectory ? '📁 ' : '📄 ') + f.name).join('\n');
       }
 
       case 'get_project_structure': {
@@ -1056,14 +1050,14 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
         const r = await window.api.agentSearch(params.query, dir);
         if (!r.success) throw new Error(r.error);
         if (!r.results.length) return 'Sin resultados.';
-        return r.results.map(x=>`${x.path}:\n  ${x.matches.map(m=>`L${m.line}: ${m.text}`).join('\n  ')}`).join('\n\n');
+        return r.results.map(x => `${x.path}:\n  ${x.matches.map(m => `L${m.line}: ${m.text}`).join('\n  ')}`).join('\n\n');
       }
 
       case 'run_command': {
         const cwd = params.cwd ? resolve(params.cwd) : this.state.currentFolder;
         if (!cwd) throw new Error('No hay carpeta abierta.');
         this.ensureWorkspacePath(cwd, 'No se pueden ejecutar comandos fuera de la carpeta abierta.');
-        const r   = await window.api.agentRunCommand(params.command, cwd);
+        const r = await window.api.agentRunCommand(params.command, cwd);
         const out = [
           r.stdout && `stdout:\n${r.stdout}`,
           r.stderr && `stderr:\n${r.stderr}`,
@@ -1073,7 +1067,7 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
       }
 
       case 'get_open_file':
-        return { path:this.state.currentFile||null, content:this.state.editorInstance?.getValue()||'' };
+        return { path: this.state.currentFile || null, content: this.state.editorInstance?.getValue() || '' };
 
       case 'open_file': {
         const fp = resolve(params.path);
@@ -1088,7 +1082,7 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
         const ed = this.state.editorInstance;
         if (!ed) throw new Error('No hay editor activo');
         const pos = ed.getPosition();
-        ed.executeEdits('nova-ai',[{ range:{startLineNumber:pos.lineNumber,startColumn:pos.column,endLineNumber:pos.lineNumber,endColumn:pos.column}, text:params.text }]);
+        ed.executeEdits('nova-ai', [{ range: { startLineNumber: pos.lineNumber, startColumn: pos.column, endLineNumber: pos.lineNumber, endColumn: pos.column }, text: params.text }]);
         ed.focus();
         return 'Texto insertado en cursor.';
       }
@@ -1096,13 +1090,26 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
       case 'replace_selection': {
         const ed = this.state.editorInstance;
         if (!ed) throw new Error('No hay editor activo');
-        ed.executeEdits('nova-ai',[{ range:ed.getSelection(), text:params.newText }]);
+        ed.executeEdits('nova-ai', [{ range: ed.getSelection(), text: params.newText }]);
         ed.focus();
         return 'Selección reemplazada.';
       }
 
+      case 'get_diagnostics': {
+        const ed = this.state.editorInstance;
+        if (!ed || !window.monaco) return 'No hay editor o modelo activo para obtener diagnósticos.';
+        const model = ed.getModel();
+        if (!model) return 'No hay archivo cargado en el editor.';
+        const markers = window.monaco.editor.getModelMarkers({ resource: model.uri });
+        if (!markers.length) return 'No se detectaron errores ni advertencias en el archivo actual. ✓';
+        return markers.map(m => {
+          const sev = m.severity === 8 ? 'ERROR' : (m.severity === 4 ? 'WARNING' : 'INFO');
+          return `[${sev}] L${m.startLineNumber}:C${m.startColumn} - ${m.message}`;
+        }).join('\n');
+      }
+
       default:
-        throw new Error(`Herramienta desconocida: "${tool}". Usa una de: read_file, write_file, create_file, create_directory, delete_file, move_file, list_files, get_project_structure, search_in_files, run_command, get_open_file, open_file, insert_at_cursor, replace_selection`);
+        throw new Error(`Herramienta desconocida: "${tool}". Usa una de: read_file, write_file, create_file, create_directory, delete_file, move_file, list_files, get_project_structure, search_in_files, run_command, get_diagnostics, get_open_file, open_file, insert_at_cursor, replace_selection`);
     }
   }
 
@@ -1146,7 +1153,7 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
   // UI DE MENSAJES
   // ==========================================================================
 
-  appendMessage(role, text, streaming=false) {
+  appendMessage(role, text, streaming = false) {
     const welcome = this.container.querySelector('.ai-welcome');
     if (welcome) welcome.remove();
 
@@ -1163,7 +1170,7 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
           <span class="ai-msg-role">Nova AI</span>
         </div>
         <div class="ai-msg-bubble">
-          <div class="ai-msg-content ${streaming?'streaming':''}">
+          <div class="ai-msg-content ${streaming ? 'streaming' : ''}">
             ${streaming ? '<span class="ai-cursor">▋</span>' : renderMarkdown(text)}
           </div>
         </div>
@@ -1201,7 +1208,7 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
       btnCopy.onclick = () => {
         navigator.clipboard.writeText(code);
         btnCopy.textContent = '✓ Copiado';
-        setTimeout(()=>btnCopy.textContent='Copiar',2000);
+        setTimeout(() => btnCopy.textContent = 'Copiar', 2000);
       };
 
       const btnInsert = document.createElement('button');
@@ -1211,7 +1218,7 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
         const ed = this.state.editorInstance;
         if (!ed) return;
         const pos = ed.getPosition();
-        ed.executeEdits('nova-ai',[{ range:ed.getSelection()||{startLineNumber:pos.lineNumber,startColumn:pos.column,endLineNumber:pos.lineNumber,endColumn:pos.column}, text:code }]);
+        ed.executeEdits('nova-ai', [{ range: ed.getSelection() || { startLineNumber: pos.lineNumber, startColumn: pos.column, endLineNumber: pos.lineNumber, endColumn: pos.column }, text: code }]);
         ed.focus();
       };
 
@@ -1221,9 +1228,9 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
       btnReplace.onclick = () => {
         const ed = this.state.editorInstance;
         if (!ed) return;
-        ed.executeEdits('nova-ai',[{ range:ed.getSelection(), text:code }]);
+        ed.executeEdits('nova-ai', [{ range: ed.getSelection(), text: code }]);
         btnReplace.textContent = '✓';
-        setTimeout(()=>btnReplace.textContent='↩ Reemplazar',2000);
+        setTimeout(() => btnReplace.textContent = '↩ Reemplazar', 2000);
       };
 
       actions.append(btnCopy, btnInsert, btnReplace);
@@ -1233,16 +1240,16 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
     const bubble = el.querySelector('.ai-msg-bubble');
     if (bubble && c.scrollHeight > 500) {
       c.style.maxHeight = '500px';
-      c.style.overflow  = 'hidden';
+      c.style.overflow = 'hidden';
       const btn = document.createElement('button');
       btn.className = 'ai-msg-expand-btn';
       btn.textContent = '▼ Ver más';
       btn.onclick = () => {
         const expanded = c.style.maxHeight !== 'none';
         c.style.maxHeight = expanded ? 'none' : '500px';
-        c.style.overflow  = expanded ? 'visible' : 'hidden';
-        btn.textContent   = expanded ? '▲ Ver menos' : '▼ Ver más';
-        if (!expanded) bubble.scrollIntoView({behavior:'smooth',block:'nearest'});
+        c.style.overflow = expanded ? 'visible' : 'hidden';
+        btn.textContent = expanded ? '▲ Ver menos' : '▼ Ver más';
+        if (!expanded) bubble.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       };
       bubble.appendChild(btn);
     }
@@ -1250,23 +1257,23 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
     this.scrollToBottom();
   }
 
-  addToolStep(msgEl, status, tool, detail='') {
+  addToolStep(msgEl, status, tool, detail = '') {
     const stepsEl = msgEl.querySelector('.ai-tool-steps');
     if (!stepsEl) return;
 
-    const icons = { running:'⚙️', done:'✅', error:'❌', cancelled:'🚫' };
-    const labels = { running:'Ejecutando', done:'Completado', error:'Error', cancelled:'Cancelado' };
+    const icons = { running: '⚙️', done: '✅', error: '❌', cancelled: '🚫' };
+    const labels = { running: 'Ejecutando', done: 'Completado', error: 'Error', cancelled: 'Cancelado' };
 
     const step = document.createElement('div');
     step.className = `ai-tool-step ai-tool-step--${status}`;
 
     // Texto del detalle con truncado
-    const detailShort = detail.length > 120 ? detail.slice(0,120)+'…' : detail;
+    const detailShort = detail.length > 120 ? detail.slice(0, 120) + '…' : detail;
 
     step.innerHTML = `
-      <span class="ai-step-icon">${icons[status]||'•'}</span>
+      <span class="ai-step-icon">${icons[status] || '•'}</span>
       <span class="ai-step-body">
-        <span class="ai-step-label">${labels[status]||status}: <strong>${escapeHtml(tool)}</strong></span>
+        <span class="ai-step-label">${labels[status] || status}: <strong>${escapeHtml(tool)}</strong></span>
         ${detailShort ? `<span class="ai-step-detail">${escapeHtml(detailShort)}</span>` : ''}
       </span>
     `;
@@ -1294,7 +1301,7 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
   // ==========================================================================
 
   loadConversations() {
-    try { return JSON.parse(localStorage.getItem('ide_chat_history')||'[]'); }
+    try { return JSON.parse(localStorage.getItem('ide_chat_history') || '[]'); }
     catch { return []; }
   }
 
@@ -1304,69 +1311,69 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
 
   saveConversation() {
     if (!this.messages.length) return;
-    const firstUser = this.messages.find(m=>m.role==='user');
-    const title     = firstUser ? firstUser.content.slice(0,60)+(firstUser.content.length>60?'...':'') : 'Sin título';
+    const firstUser = this.messages.find(m => m.role === 'user');
+    const title = firstUser ? firstUser.content.slice(0, 60) + (firstUser.content.length > 60 ? '...' : '') : 'Sin título';
     const conv = {
-      id:       this.activeConversation || generateId(),
+      id: this.activeConversation || generateId(),
       title,
-      date:     new Date().toISOString(),
+      date: new Date().toISOString(),
       messages: [...this.messages],
-      model:    this.activeModel,
+      model: this.activeModel,
       provider: this.provider
     };
-    const idx = this.conversations.findIndex(c=>c.id===conv.id);
-    if (idx>=0) this.conversations[idx] = conv;
+    const idx = this.conversations.findIndex(c => c.id === conv.id);
+    if (idx >= 0) this.conversations[idx] = conv;
     else { this.conversations.unshift(conv); this.activeConversation = conv.id; }
-    if (this.conversations.length > 50) this.conversations = this.conversations.slice(0,50);
+    if (this.conversations.length > 50) this.conversations = this.conversations.slice(0, 50);
     this.saveConversations();
   }
 
   loadConversation(id) {
-    const conv = this.conversations.find(c=>c.id===id);
+    const conv = this.conversations.find(c => c.id === id);
     if (!conv) return;
     this.activeConversation = id;
-    this.messages    = [...conv.messages];
+    this.messages = [...conv.messages];
     this.activeModel = conv.model || this.activeModel;
-    this.provider    = conv.provider || 'ollama';
+    this.provider = conv.provider || 'ollama';
 
     const messagesEl = this.container.querySelector('#ai-messages');
     messagesEl.innerHTML = '';
     this.messages.forEach(msg => {
-      if (msg.role==='user')      this.appendMessage('user', msg.content);
-      else if (msg.role==='assistant') {
-        const el = this.appendMessage('assistant','');
+      if (msg.role === 'user') this.appendMessage('user', msg.content);
+      else if (msg.role === 'assistant') {
+        const el = this.appendMessage('assistant', '');
         this.finalizeMessage(el, this.stripToolCalls(msg.content));
       }
     });
 
     const provSel = this.container.querySelector('#ai-provider-select');
-    const modSel  = this.container.querySelector('#ai-model-select');
+    const modSel = this.container.querySelector('#ai-model-select');
     if (provSel) provSel.value = this.provider;
-    if (modSel)  modSel.value  = this.activeModel;
+    if (modSel) modSel.value = this.activeModel;
     this.updateBadge();
     this.switchTab('agent');
   }
 
   deleteConversation(id) {
-    this.conversations = this.conversations.filter(c=>c.id!==id);
+    this.conversations = this.conversations.filter(c => c.id !== id);
     this.saveConversations();
     if (this.activeConversation === id) this.newConversation();
     else this.container.querySelector('#ai-history-list').innerHTML = this.renderHistoryList();
   }
 
   newConversation() {
-    this.messages           = [];
+    this.messages = [];
     this.activeConversation = null;
-    this.pendingContext     = null;
+    this.pendingContext = null;
     this.container.querySelector('#ai-messages').innerHTML = this.renderWelcome();
     this.updateContextDisplay();
 
     // Re-attach suggestion buttons
     this.container.querySelectorAll('.ai-suggestion-btn').forEach(btn =>
-      btn.addEventListener('click',()=>{ this.container.querySelector('#ai-input').value=btn.dataset.prompt; this.handleSend(); })
+      btn.addEventListener('click', () => { this.container.querySelector('#ai-input').value = btn.dataset.prompt; this.handleSend(); })
     );
 
-    this.switchTab(this.activeTab==='history'?'agent':this.activeTab);
+    this.switchTab(this.activeTab === 'history' ? 'agent' : this.activeTab);
   }
 
   // ==========================================================================
@@ -1376,12 +1383,12 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
   updateUIState() {
     const sendBtn = this.container.querySelector('#ai-btn-send');
     const stopBtn = this.container.querySelector('#ai-btn-stop');
-    const status  = this.container.querySelector('#ai-status');
+    const status = this.container.querySelector('#ai-status');
 
     if (this.isStreaming) {
       sendBtn.style.display = 'none';
       stopBtn.style.display = 'flex';
-      status.innerHTML = `<span class="ai-status-dot"></span>${this.activeTab==='agent'?'Agente trabajando...':'Generando...'}`;
+      status.innerHTML = `<span class="ai-status-dot"></span>${this.activeTab === 'agent' ? 'Agente trabajando...' : 'Generando...'}`;
     } else {
       sendBtn.style.display = 'flex';
       stopBtn.style.display = 'none';
@@ -1396,12 +1403,12 @@ replace_selection   {"tool":"replace_selection","params":{"newText":"code"}}`;
     if (badge) badge.textContent = this.activeModel;
   }
 
-  showStatus(msg, type='info') {
+  showStatus(msg, type = 'info') {
     const status = this.container.querySelector('#ai-status');
     if (!status) return;
     status.textContent = msg;
-    status.className   = `ai-status ai-status--${type}`;
-    setTimeout(()=>{ status.textContent=''; status.className='ai-status'; },3000);
+    status.className = `ai-status ai-status--${type}`;
+    setTimeout(() => { status.textContent = ''; status.className = 'ai-status'; }, 3000);
   }
 }
 

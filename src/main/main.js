@@ -64,7 +64,11 @@ async function createWindow() {
   }
 }
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  createWindow()
+  registerMarketplaceHandlers()
+  registerLiveServerHandlers()
+})
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 
@@ -718,15 +722,29 @@ async function streamSSE(url, body, headers, reqId) {
   }
   const reader = res.body.getReader()
   const dec = new TextDecoder()
+  let buffer = ''
+
   while (true) {
     const { done, value } = await reader.read()
     if (done) break
-    for (const line of dec.decode(value).split('\n')) {
-      if (!line.startsWith('data: ') || line === 'data: [DONE]') continue
+    
+    buffer += dec.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() // Mantener la última línea incompleta en el buffer
+
+    for (const line of lines) {
+      const trimmedLine = line.trim()
+      if (!trimmedLine || !trimmedLine.startsWith('data: ') || trimmedLine === 'data: [DONE]') continue
+      
       try {
-        const token = JSON.parse(line.slice(6)).choices?.[0]?.delta?.content || ''
+        const jsonStr = trimmedLine.slice(6)
+        const parsed = JSON.parse(jsonStr)
+        const token = parsed.choices?.[0]?.delta?.content || ''
         if (token) mainWin.webContents.send('ai:token', { token, done: false, reqId })
-      } catch {}
+      } catch (e) {
+        // Si falla el parseo, el buffer podría estar mal, pero seguimos con la siguiente línea
+        console.warn('[streamSSE] Parse error:', e.message, trimmedLine)
+      }
     }
   }
   mainWin.webContents.send('ai:token', { token: '', done: true, reqId })
@@ -760,43 +778,108 @@ ipcMain.handle('ai:streamGroq', async (_, { messages, model, apiKey, reqId }) =>
   }
 })
 
-// ── Extension Store (Marketplace Oficial) ───────────────────────────────────
-// Temporarily commented out for testing
-// const MarketplaceService = require('./marketplace/marketplace-service.js')
-// const marketplace = new MarketplaceService()
+// No lo inicializamos aquí, lo haremos en whenReady para evitar crashes tempranos
+let marketplace;
 
-// ipcMain.handle('marketplace:search', async (_, query) => {
-//   return await marketplace.searchExtensions(query)
-// })
+function registerMarketplaceHandlers() {
+  try {
+    const MarketplaceService = require('./marketplace/marketplace-service.js')
+    marketplace = new MarketplaceService()
 
-// ipcMain.handle('marketplace:details', async (_, { publisher, name }) => {
-//   return await marketplace.getExtensionDetails(publisher, name)
-// })
+    ipcMain.handle('marketplace:search', async (_, query) => {
+      return await marketplace.searchExtensions(query)
+    })
 
-// ipcMain.handle('marketplace:install', async (_, { publisher, name, version }) => {
-//   try {
-//     const meta = await marketplace.installExtension(publisher, name, version)
-//     return { success: true, meta }
-//   } catch (error) {
-//     console.error('Failed to install extension:', error)
-//     throw error
-//   }
-// })
+    ipcMain.handle('marketplace:details', async (_, { publisher, name }) => {
+      return await marketplace.getExtensionDetails(publisher, name)
+    })
 
-// ipcMain.handle('marketplace:uninstall', async (_, { publisher, name }) => {
-//   try {
-//     const result = await marketplace.uninstallExtension(publisher, name)
-//     return { success: true, result }
-//   } catch (error) {
-//     console.error('Failed to uninstall extension:', error)
-//     throw error
-//   }
-// })
+    ipcMain.handle('marketplace:install', async (_, { publisher, name, version }) => {
+      try {
+        const meta = await marketplace.installExtension(publisher, name, version)
+        return { success: true, meta }
+      } catch (error) {
+        console.error('Failed to install extension:', error)
+        throw error
+      }
+    })
 
-// ipcMain.handle('marketplace:installed', async () => {
-//   return await marketplace.getInstalledExtensions()
-// })
+    ipcMain.handle('marketplace:uninstall', async (_, { publisher, name }) => {
+      try {
+        const result = await marketplace.uninstallExtension(publisher, name)
+        return { success: true, result }
+      } catch (error) {
+        console.error('Failed to uninstall extension:', error)
+        throw error
+      }
+    })
+
+    ipcMain.handle('marketplace:installed', async () => {
+      return await marketplace.getInstalledExtensions()
+    })
+    console.log('[Main] Marketplace IPC handlers registered successfully')
+  } catch (err) {
+    console.error('[Main] Failed to register Marketplace handlers:', err)
+  }
+}
 
 // ipcMain.handle('marketplace:check-updates', async () => {
 //   return await marketplace.checkUpdates()
 // })
+
+// ── History Persistence ────────────────────────────────────────────────────────
+const HISTORY_DIR = path.join(app.getPath('userData'), 'history')
+if (!fs.existsSync(HISTORY_DIR)) fs.mkdirSync(HISTORY_DIR, { recursive: true })
+
+function getHistoryPath(filePath) {
+  const crypto = require('crypto')
+  const hash = crypto.createHash('md5').update(filePath).digest('hex')
+  return path.join(HISTORY_DIR, `${hash}.json`)
+}
+
+ipcMain.handle('history:save', async (_, { filePath, history }) => {
+  try {
+    const p = getHistoryPath(filePath)
+    fs.writeFileSync(p, JSON.stringify(history, null, 2))
+    return true
+  } catch (e) {
+    console.error('[History] Failed to save:', e)
+    return false
+  }
+})
+
+ipcMain.handle('history:get', async (_, filePath) => {
+  try {
+    const p = getHistoryPath(filePath)
+    if (fs.existsSync(p)) {
+      return JSON.parse(fs.readFileSync(p, 'utf-8'))
+    }
+    return null
+  } catch (e) {
+    console.error('[History] Failed to load:', e)
+    return null
+  }
+})
+
+ipcMain.handle('shell:openExternal', async (_, url) => {
+  const { shell } = require('electron')
+  shell.openExternal(url)
+})
+
+// ── Live Server ──────────────────────────────────────────────────────────────
+function registerLiveServerHandlers() {
+  try {
+    const liveServer = require('./live-server.js')
+
+    ipcMain.handle('live-server:start', async (_, { rootPath, port }) => {
+      return await liveServer.start(rootPath, port)
+    })
+
+    ipcMain.handle('live-server:stop', async () => {
+      return await liveServer.stop()
+    })
+    console.log('[Main] Live Server IPC handlers registered successfully')
+  } catch (err) {
+    console.error('[Main] Failed to register Live Server handlers:', err)
+  }
+}

@@ -1,111 +1,93 @@
-# MyIDE v2 — IDE completo con IA estilo Cursor 🚀
+<div align="center">
+  <img src="https://raw.githubusercontent.com/microsoft/vscode-icons/master/icons/dark/file_type_vscode.svg" width="80" height="80" alt="NVCode Logo">
+  <h1>NVCode</h1>
+  <p><strong>El IDE potenciado por IA</strong></p>
+  <p><em>Ligero, Rápido y Totalmente Agentic</em></p>
+</div>
 
-## Instalación
+---
 
-```bash
-# 1. Instalar dependencias
-npm install
+## 🚀 Instalación Rápida
 
-# 2. Asegurarse que Ollama esté corriendo con el modelo
-ollama serve            # en otra terminal
-ollama pull deepseek-coder:6.7b
+1. **Instalar dependencias**:
+   ```bash
+   npm install
+   ```
+2. **Preparar la IA (Ollama)**:
+   ```bash
+   ollama serve
+   ollama pull deepseek-coder:base # o tu modelo preferido
+   ```
+3. **Iniciar**:
+   ```bash
+   npm run dev
+   ```
 
-# 3. Correr en desarrollo
-npm run dev
-```
+---
 
-## Características v2
+## 🔥 Características Destacadas
 
-### Editor
-- Monaco Editor (mismo motor que VS Code)
-- Syntax highlighting para 20+ lenguajes
-- Autocompletado inteligente
-- Bracket pair colorization
-- Múltiples cursores (Alt+Click)
-- Buscar/reemplazar (Ctrl+H)
-- **Decoraciones IA**: las líneas modificadas por la IA se destacan en verde 8 segundos
+### 🧠 NVCode Intelligence (Agente Pro)
+El Agente de IA ahora es más metódico y autónomo que nunca:
+- **Chain of Thought (CoT)**: Puedes ver el bloque de **Razonamiento** de la IA en tiempo real antes de cada acción.
+- **Auto-Corrección (Diagnostics)**: La IA lee los errores del editor (`get_diagnostics`) y corrige sus propios fallos de sintaxis.
+- **Streaming Robusto**: Buffering de tokens mejorado para evitar cortes en respuestas largas.
+- **Protocolos Agentic**: Capacidad para crear estructuras de proyectos completas desde cero de forma fiable.
 
-### Chat IA (estilo Cursor)
-- **Streaming** de respuestas token a token
-- **3 modos**: Chat, Editar, Explicar
-- **Ctrl+L** — adjunta código seleccionado al mensaje
-- **Ctrl+K** — solicita edición inline
-- Botones **"Aplicar al editor"** y **"Insertar en cursor"** en cada bloque de código
-- **Sugerencias rápidas**: explicar, buscar bugs, refactorizar, generar tests, documentar, optimizar
-- Selector de modelos (se carga automáticamente desde Ollama)
-- Botón **Detener** para cancelar streaming
-- Historial de conversación con contexto
-- Panel redimensionable (arrastra el borde)
+### ⏪ Sistema de Deshacer/Rehacer Profesional
+No pierdas ni una línea de código:
+- **Undo por Frase**: Agrupación inteligente basada en puntuación y tiempo.
+- **Visual History Timeline**: Explora todos los estados pasados (`Ctrl+Alt+Z`).
+- **Historial Persistente**: Se guardan hasta 5,000 estados por archivo en disco.
+- **Branching**: Navega entre diferentes ramas de cambios sin perder el trabajo futuro.
 
-### Terminal integrada
-- Terminal real con xterm.js + node-pty
-- PowerShell en Windows, bash en Linux/Mac
-- Múltiples terminales simultáneas
-- Colores ANSI completos
-- Ctrl+` para abrir/cerrar
+### ⚡ Automatización & Formateo
+- **Auto-Formateo con Tab**: Pulsa `Tab` y NVCode arreglará la indentación y estilo de la línea automáticamente.
+- **Formateador Nativo**: Soporte completo para JS, HTML y CSS mediante `Shift + Alt + F`.
+- **Integración Live Server**: Haz clic derecho en un archivo HTML o usa el botón de la barra de estado para previsualizar cambios al instante en el puerto 5500.
 
-### Explorador de archivos
-- Árbol de archivos con expansión lazy
-- **Menú contextual** (clic derecho):
-  - Nuevo archivo / carpeta
-  - Renombrar
-  - Eliminar
-  - Copiar ruta
-- Crear archivos y carpetas desde la barra
-- Auto-refresh
+### 🖥️ Terminal Inteligente
+- **Detección de URLs**: Si ejecutas `npm run dev`, NVCode detecta la URL y abre el navegador por ti.
+- **Enlaces Clickeables**: Abre cualquier enlace de la terminal directamente en tu navegador instalado.
+- **Layout Adaptativo**: Ajuste perfecto de resolución al redimensionar paneles.
 
-### Búsqueda en archivos
-- Buscar en todos los archivos abiertos
-- Opciones: case sensitive, regex, palabra completa
-- Click en resultado → salta a la línea
+### 🛒 Marketplace Restaurado
+- Conexión completa con el ecosistema de extensiones. Búsqueda fiable, metadatos y carga de iconos corregida.
 
-### Extensiones
-- Panel de extensiones con lista curada
-- Toggle de cada extensión
-- (Futuro: marketplace real)
+---
 
-## Atajos de teclado
+## ⌨️ Atajos de Teclado Esenciales
 
-| Atajo | Acción |
-|-------|--------|
-| `Ctrl+L` | Enviar código al chat IA |
-| `Ctrl+K` | Edición inline con IA |
-| `Ctrl+`` | Terminal |
-| `Ctrl+Shift+L` | Mostrar/ocultar panel IA |
-| `Ctrl+Shift+E` | Explorador |
-| `Ctrl+Shift+F` | Buscar en archivos |
-| `Ctrl+Shift+X` | Extensiones |
-| `Ctrl+S` | Guardar |
-| `Ctrl+Shift+S` | Guardar como |
-| `Ctrl+W` | Cerrar tab |
-| `Ctrl+Tab` | Siguiente tab |
-| `Ctrl+Shift+Tab` | Tab anterior |
+| Teclas | Acción |
+| :--- | :--- |
+| `Ctrl + L` | Enviar código al chat IA |
+| `Ctrl + K` | Edición inline ultra-rápida |
+| `Ctrl + Alt + Z` | Abrir Línea de Tiempo Visual |
+| `Shift + Alt + F` | Formatear archivo completo |
+| `Ctrl + \`` | Abrir/Cerrar Terminal |
+| `Tab` | (Al escribir) Auto-formatear línea |
+| `Ctrl + Shift + S` | Detener generación de IA |
 
-## Cómo funciona el diff de la IA
+---
 
-Cuando presionas **"✦ Aplicar al editor"**:
-1. El código se inserta en el editor
-2. Las líneas nuevas/modificadas se destacan en **verde translúcido** con un icono ✦ en el margen
-3. Después de 8 segundos, las decoraciones desaparecen automáticamente
+## 🏗️ Arquitectura del Proyecto
 
-## Estructura del proyecto
-
-```
-myide/
+```text
+NVCode/
 ├── src/
 │   ├── main/
-│   │   ├── main.js        # Electron main: ventana, IPC, IA, terminal
-│   │   └── preload.js     # Bridge seguro Node.js ↔ renderer
+│   │   ├── main.js        # Proceso Principal: IPC, Gestión de IA, Terminal, Servidores.
+│   │   └── preload.js     # Puente seguro Node.js ↔ Renderer
 │   └── renderer/
-│       ├── main.js        # Punto de entrada: layout, atajos, panel toggle
-│       ├── state.js       # Estado global reactivo
-│       └── components/
-│           ├── editor.js    # Monaco Editor + AI diff
-│           ├── tabs.js      # Tabs de archivos abiertos
-│           ├── sidebar.js   # Explorador + búsqueda + extensiones
-│           ├── ai-chat.js   # Chat IA estilo Cursor
-│           ├── terminal.js  # Terminal xterm.js
-│           └── statusbar.js # Barra de estado inferior
-├── index.html             # Carga Monaco + xterm desde CDN
-└── package.json
+│       ├── state.js       # Estado global reactivo y autoguardado.
+│       ├── components/
+│       │   ├── ai-agent.js  # El corazón de la IA: ReAct Loop y herramientas.
+│       │   ├── MonacoEditor.js # Editor core con inyección de diffs.
+│       │   └── ThemeManager.js # Gestión dinámica de temas (Oscuro/Claro/Contraste).
+│       └── utils/
+│           ├── markdown.js  # Renderizado de IA con soporte para pensamientos (CoT).
+│           └── HistoryManager.js # Motor de Undo/Redo por frases y persistencia.
 ```
+
+---
+

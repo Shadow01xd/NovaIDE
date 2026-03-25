@@ -604,6 +604,21 @@ export class FileManager {
     items.push(
       { icon: '📋', label: 'Copiar ruta', action: () => this.copyPath(item) }
     )
+
+    // Acciones Live Server para HTML
+    const ext = item.name.split('.').pop()?.toLowerCase()
+    if (ext === 'html' || ext === 'htm') {
+      items.push({ type: 'separator' })
+      items.push({ 
+        icon: '⚡', 
+        label: 'Open with Live Server', 
+        action: () => {
+          if (this.onCustomAction) {
+            this.onCustomAction('live-server:start', item)
+          }
+        } 
+      })
+    }
     
     return items
   }
@@ -1018,6 +1033,7 @@ export class FileManager {
     if (callbacks.onFileOpen) this.onFileOpen = callbacks.onFileOpen
     if (callbacks.onFolderChange) this.onFolderChange = callbacks.onFolderChange
     if (callbacks.onFileSave) this.onFileSave = callbacks.onFileSave
+    if (callbacks.onCustomAction) this.onCustomAction = callbacks.onCustomAction
   }
   
   /**

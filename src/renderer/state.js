@@ -13,6 +13,11 @@ export const state = {
   aiPanelOpen: true,
   terminalHeight: 220,
   
+  // Live Server State
+  liveServerRunning: false,
+  liveServerPort: 5500,
+  liveServerUrl: null,
+  
   // Panel sizes
   sidebarWidth: 260,
   aiPanelWidth: 340,

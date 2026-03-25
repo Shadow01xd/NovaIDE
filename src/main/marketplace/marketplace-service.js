@@ -59,7 +59,7 @@ class MarketplaceService {
             criteria: criteria,
             pageNumber: 1,
             pageSize: 50,
-            flags: 1 | 256 | 512 | 2048 | 4096,
+            flags: 1 | 2 | 256 | 512 | 128 | 2048 | 4096,
             assetTypes: ['Microsoft.VisualStudio.Services.Icons.Default']
         });
         return result.results[0].extensions || [];
@@ -78,7 +78,7 @@ class MarketplaceService {
         ],
         pageNumber: 1,
         pageSize: 1,
-        flags: 1 | 256 | 512 | 2048 | 4096 | 8192
+        flags: 1 | 2 | 4 | 256 | 512 | 128 | 2048 | 4096 | 8192
         });
         
         const extensions = result.results[0].extensions;

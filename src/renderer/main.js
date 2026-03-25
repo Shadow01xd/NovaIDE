@@ -11,6 +11,10 @@ import { DragAndDropManager }  from './components/drag-drop.js'
 // Importar sistema de temas
 import { themeManager }        from './components/ThemeManager.js'
 import { createThemeSelectorPopup } from './components/ThemeSelectorPopup.js'
+import { createHistoryTimeline } from './components/history-timeline.js'
+import { historyManager } from './utils/history-manager.js'
+import './styles/history-timeline.css'
+import './styles/terminal-new.css'
 
 // Cargar settings guardados
 const savedSettings = await window.api.getSettings()
@@ -82,6 +86,7 @@ const editor = await createEditor(document.getElementById('editor'), state, them
 window.__editorInstance = editor
 createAIAgent(document.getElementById('ai-panel'), state)
 createStatusBar(document.getElementById('statusbar'), state)
+createHistoryTimeline(document.getElementById('ide-main'), state)
 
 // ── Drag and Drop Manager ────────────────────────────────────────────────────
 new DragAndDropManager(state)
@@ -252,6 +257,26 @@ window.api.onMenu(async (event) => {
       themeManager.cycleTheme(); break
     case 'openThemeSelector':
       themeSelector?.open(); break
+  }
+})
+
+// ── Historial: Salto de estado ────────────────────────────────────────────────
+state.on('historyJump', ({ index }) => {
+  const currentState = historyManager.jumpTo(state.currentFile, index)
+  if (currentState && state.editorInstance) {
+    // Aplicar el estado al editor (misma lógica que undo/redo)
+    const ed = state.editorInstance
+    const model = ed.getModel()
+    if (model) {
+      ed.executeEdits('history-jump', [{
+        range: model.getFullModelRange(),
+        text: currentState.content,
+        forceMoveMarkers: true
+      }])
+      if (currentState.cursor) ed.setPosition(currentState.cursor)
+      if (currentState.selection) ed.setSelection(currentState.selection)
+      ed.revealPositionInCenter(currentState.cursor || { lineNumber: 1, column: 1 })
+    }
   }
 })
 

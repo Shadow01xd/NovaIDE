@@ -1,5 +1,5 @@
 // src/renderer/components/ThemeManager.js
-// Gestor central de temas para NovaIDE
+// Gestor central de temas para NVCode
 
 /**
  * Clase ThemeManager - Gestiona los temas de la interfaz y Monaco Editor
@@ -69,16 +69,16 @@ export class ThemeManager {
     try {
       // Esperar a que Monaco esté disponible
       await this._waitForMonaco()
-      
+
       // Registrar temas en Monaco
       this._registerMonacoThemes()
-      
+
       // Cargar tema guardado o detectar del sistema
       await this._loadSavedTheme()
-      
+
       // Aplicar tema inicial
       this.applyTheme(this.currentTheme)
-      
+
       console.log(`ThemeManager inicializado con tema: ${this.currentTheme}`)
     } catch (error) {
       console.error('Error al inicializar ThemeManager:', error)
@@ -290,7 +290,7 @@ export class ThemeManager {
     try {
       // Intentar cargar desde localStorage
       const savedTheme = localStorage.getItem(this.STORAGE_KEY)
-      
+
       if (savedTheme && this.themes[savedTheme]) {
         this.currentTheme = savedTheme
         return
@@ -299,7 +299,7 @@ export class ThemeManager {
       // Detectar tema del sistema si no hay tema guardado
       const systemTheme = this._detectSystemTheme()
       this.currentTheme = systemTheme
-      
+
       // Guardar tema detectado
       this._saveTheme(systemTheme)
     } catch (error) {
@@ -317,12 +317,12 @@ export class ThemeManager {
       if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
         return 'light'
       }
-      
+
       // Verificar si hay modo alto contraste
       if (window.matchMedia && window.matchMedia('(prefers-contrast: high)').matches) {
         return 'high-contrast'
       }
-      
+
       return 'dark' // Default
     } catch (error) {
       console.warn('No se pudo detectar tema del sistema:', error)
@@ -342,21 +342,21 @@ export class ThemeManager {
     try {
       // Aplicar tema a la UI mediante data-theme
       this._applyUITheme(themeId)
-      
+
       // Aplicar tema a Monaco si está disponible
       if (this.monacoReady) {
         this._applyMonacoTheme(themeId)
       }
-      
+
       // Actualizar estado
       this.currentTheme = themeId
-      
+
       // Guardar en localStorage
       this._saveTheme(themeId)
-      
+
       // Notificar a listeners
       this._notifyListeners(themeId)
-      
+
       console.log(`Tema aplicado: ${themeId}`)
       return true
     } catch (error) {
@@ -371,10 +371,10 @@ export class ThemeManager {
   _applyUITheme(themeId) {
     // Remover tema anterior
     document.documentElement.removeAttribute('data-theme')
-    
+
     // Aplicar nuevo tema
     document.documentElement.setAttribute('data-theme', themeId)
-    
+
     // Forzar reflow para asegurar aplicación inmediata
     document.documentElement.offsetHeight
   }
@@ -390,7 +390,7 @@ export class ThemeManager {
 
     const theme = this.themes[themeId]
     const monaco = window.monaco
-    
+
     // Aplicar tema a todas las instancias del editor
     monaco.editor.setTheme(theme.monacoTheme)
   }
@@ -438,7 +438,7 @@ export class ThemeManager {
    */
   addThemeChangeListener(callback) {
     this.listeners.add(callback)
-    
+
     // Retornar función para remover listener
     return () => {
       this.listeners.delete(callback)
@@ -460,7 +460,7 @@ export class ThemeManager {
     const currentIndex = themeIds.indexOf(this.currentTheme)
     const nextIndex = (currentIndex + 1) % themeIds.length
     const nextTheme = themeIds[nextIndex]
-    
+
     this.applyTheme(nextTheme)
     return nextTheme
   }

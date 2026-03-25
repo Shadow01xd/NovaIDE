@@ -139,6 +139,27 @@ export function createSidebar(container, state) {
       onFileSave: (filePath, content) => {
         // Guardar archivo (implementar si es necesario)
         window.api.saveFile(filePath, content)
+      },
+      onCustomAction: async (action, item) => {
+        if (action === 'live-server:start') {
+          // Si ya está corriendo, detenerlo primero
+          if (state.liveServerRunning) {
+            await window.api.liveServerStop()
+          }
+
+          const root = state.currentFolder || await window.api.pathDirname(item.path)
+          const filename = item.path.replace(/\\/g, '/').split('/').pop()
+          
+          const result = await window.api.liveServerStart(root, 5500)
+          state.liveServerRunning = true
+          state.liveServerUrl = result.url
+          
+          // Abrir navegador
+          window.api.openExternal(`${result.url}/${filename}`)
+          
+          // Actualizar barra de estado (esto emitirá un evento o disparará un render)
+          state.emit('fileOpened') // Forzar re-render de statusbar para que muestre el estado "Active"
+        }
       }
     })
 
