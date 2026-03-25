@@ -500,31 +500,36 @@ ipcMain.handle('ai:chat', async (_, { messages, model = 'deepseek-coder' }) => {
 
 // Streaming — emite 'ai:token' para cada chunk
 ipcMain.handle('ai:stream', async (_, { messages, model = 'deepseek-coder', reqId }) => {
-  const res = await fetch('http://127.0.0.1:11434/api/chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, messages, stream: true }),
-  })
-  if (!res.ok) throw new Error(`Ollama ${res.status}`)
+  try {
+    const res = await fetch('http://127.0.0.1:11434/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages, stream: true }),
+    })
+    if (!res.ok) throw new Error(`Ollama ${res.status}`)
 
-  const reader = res.body.getReader()
-  const dec = new TextDecoder()
-  let full = ''
+    const reader = res.body.getReader()
+    const dec = new TextDecoder()
+    let full = ''
 
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    const lines = dec.decode(value).split('\n').filter(Boolean)
-    for (const line of lines) {
-      try {
-        const obj = JSON.parse(line)
-        const token = obj.message?.content || ''
-        full += token
-        mainWin.webContents.send('ai:token', { reqId, token, done: obj.done })
-      } catch {}
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      const lines = dec.decode(value).split('\n').filter(Boolean)
+      for (const line of lines) {
+        try {
+          const obj = JSON.parse(line)
+          const token = obj.message?.content || ''
+          full += token
+          mainWin.webContents.send('ai:token', { reqId, token, done: obj.done })
+        } catch {}
+      }
     }
+    return full
+  } catch (err) {
+    mainWin.webContents.send('ai:token', { token: '', done: true, error: err.message, reqId })
+    throw err
   }
-  return full
 })
 
 // ── Settings persistence ──────────────────────────────────────────────────────
