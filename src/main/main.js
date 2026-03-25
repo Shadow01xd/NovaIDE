@@ -571,6 +571,7 @@ ipcMain.handle('agent:readFile', async (_, p) => {
 
 ipcMain.handle('agent:writeFile', async (_, p, c) => {
   try {
+    fs.mkdirSync(path.dirname(p), { recursive: true })
     fs.writeFileSync(p, c, 'utf-8')
     return { success: true }
   } catch (e) {
@@ -580,6 +581,7 @@ ipcMain.handle('agent:writeFile', async (_, p, c) => {
 
 ipcMain.handle('agent:createFile', async (_, p, c = '') => {
   try {
+    fs.mkdirSync(path.dirname(p), { recursive: true })
     fs.writeFileSync(p, c, 'utf-8')
     return { success: true }
   } catch (e) {
@@ -653,91 +655,108 @@ ipcMain.handle('agent:searchInFiles', async (_, query, dir) => {
   return { success: true, results: results.slice(0, 20) }
 })
 
-// ── DeepSeek API streaming ───────────────────────────────────────────────────
-ipcMain.handle('ai:streamDeepSeek', async (_, { messages, model, apiKey, reqId }) => {
+ipcMain.handle('agent:createDir', async (_, p) => {
   try {
-    const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({ model, messages, stream: true })
-    })
-    if (!res.ok) throw new Error(`DeepSeek ${res.status}`)
-    
-    const reader = res.body.getReader()
-    const dec = new TextDecoder()
-    let full = ''
-    
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      const lines = dec.decode(value).split('\n').filter(line => line.trim())
-      for (const line of lines) {
-        if (line === 'data: [DONE]') continue
-        if (!line.startsWith('data: ')) continue
-        
-        try {
-          const obj = JSON.parse(line.slice(6))
-          const token = obj.choices?.[0]?.delta?.content || ''
-          mainWin.webContents.send('ai:token', { token, done: false, reqId })
-        } catch {}
-      }
-    }
-    
-    mainWin.webContents.send('ai:token', { token: '', done: true, reqId })
-  } catch (err) {
-    mainWin.webContents.send('ai:error', { error: err.message, reqId })
+    fs.mkdirSync(p, { recursive: true })
+    return { success: true }
+  } catch (e) {
+    return { success: false, error: e.message }
   }
 })
 
-// ── Groq API streaming ───────────────────────────────────────────────────
-ipcMain.handle('ai:streamGroq', async (_, { messages, model, apiKey, reqId }) => {
+ipcMain.handle('agent:moveFile', async (_, src, dest) => {
   try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({ 
-        model: model || 'meta-llama/llama-4-scout-17b-16e-instruct',
-        messages: messages, 
-        stream: true,
-        max_tokens: 8192,
-        temperature: 0.7
+    const destDir = path.dirname(dest)
+    if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true })
+    fs.renameSync(src, dest)
+    return { success: true }
+  } catch (e) {
+    return { success: false, error: e.message }
+  }
+})
+
+ipcMain.handle('agent:runCommand', async (_, command, cwd) => {
+  return new Promise((resolve) => {
+    const { exec } = require('child_process')
+    exec(command, { cwd: cwd || os.homedir(), timeout: 60000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout, stderr) => {
+      resolve({
+        success: !err,
+        stdout: (stdout || '').trim(),
+        stderr: (stderr || '').trim(),
+        exitCode: err ? (err.code || 1) : 0
       })
     })
-    if (!res.ok) {
-      const errorText = await res.text()
-      console.error('Groq API error:', errorText)
-      throw new Error(`Groq ${res.status}: ${errorText}`)
+  })
+})
+
+ipcMain.handle('agent:getProjectStructure', async (_, rootPath, maxDepth = 4) => {
+  function buildTree(dir, depth) {
+    if (depth > maxDepth) return []
+    try {
+      return fs.readdirSync(dir, { withFileTypes: true })
+        .filter(e => !['node_modules', '.git', 'dist', '.next', '__pycache__', '.cache'].includes(e.name) && !e.name.startsWith('.'))
+        .sort((a, b) => (b.isDirectory() - a.isDirectory()) || a.name.localeCompare(b.name))
+        .map(e => {
+          const full = path.join(dir, e.name)
+          return { name: e.name, path: full, isDirectory: e.isDirectory(), children: e.isDirectory() ? buildTree(full, depth + 1) : undefined }
+        })
+    } catch { return [] }
+  }
+  return { success: true, tree: buildTree(rootPath, 0) }
+})
+
+// ── Helper: streaming SSE desde main process ─────────────────────────────────
+async function streamSSE(url, body, headers, reqId) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify(body)
+  })
+  if (!res.ok) {
+    const txt = await res.text()
+    throw new Error(`HTTP ${res.status}: ${txt.slice(0, 300)}`)
+  }
+  const reader = res.body.getReader()
+  const dec = new TextDecoder()
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    for (const line of dec.decode(value).split('\n')) {
+      if (!line.startsWith('data: ') || line === 'data: [DONE]') continue
+      try {
+        const token = JSON.parse(line.slice(6)).choices?.[0]?.delta?.content || ''
+        if (token) mainWin.webContents.send('ai:token', { token, done: false, reqId })
+      } catch {}
     }
-    
-    const reader = res.body.getReader()
-    const dec = new TextDecoder()
-    let full = ''
-    
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      const lines = dec.decode(value).split('\n').filter(line => line.trim())
-      for (const line of lines) {
-        if (line === 'data: [DONE]') continue
-        if (!line.startsWith('data: ')) continue
-        
-        try {
-          const obj = JSON.parse(line.slice(6))
-          const token = obj.choices?.[0]?.delta?.content || ''
-          mainWin.webContents.send('ai:token', { token, done: false, reqId })
-        } catch {}
-      }
-    }
-    
-    mainWin.webContents.send('ai:token', { token: '', done: true, reqId })
+  }
+  mainWin.webContents.send('ai:token', { token: '', done: true, reqId })
+}
+
+// ── DeepSeek API streaming ───────────────────────────────────────────────────
+ipcMain.handle('ai:streamDeepSeek', async (_, { messages, model, apiKey, reqId }) => {
+  try {
+    await streamSSE(
+      'https://api.deepseek.com/v1/chat/completions',
+      { model: model || 'deepseek-chat', messages, stream: true, temperature: 0.3, max_tokens: 8192 },
+      { 'Authorization': `Bearer ${apiKey}` },
+      reqId
+    )
   } catch (err) {
-    mainWin.webContents.send('ai:error', { error: err.message, reqId })
+    mainWin.webContents.send('ai:token', { token: '', done: true, error: err.message, reqId })
+  }
+})
+
+// ── Groq API streaming ───────────────────────────────────────────────────────
+ipcMain.handle('ai:streamGroq', async (_, { messages, model, apiKey, reqId }) => {
+  try {
+    await streamSSE(
+      'https://api.groq.com/openai/v1/chat/completions',
+      { model: model || 'meta-llama/llama-4-scout-17b-16e-instruct', messages, stream: true, temperature: 0.3, max_tokens: 8192 },
+      { 'Authorization': `Bearer ${apiKey}` },
+      reqId
+    )
+  } catch (err) {
+    mainWin.webContents.send('ai:token', { token: '', done: true, error: err.message, reqId })
   }
 })
 

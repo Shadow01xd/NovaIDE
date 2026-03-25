@@ -66,12 +66,16 @@ contextBridge.exposeInMainWorld('api', {
   setSettings: (d)   => ipcRenderer.invoke('settings:set', d),
 
   // AI Agent Tools (consolidated - use these instead of fs:* for agent operations)
-  agentReadFile:   (p)       => ipcRenderer.invoke('agent:readFile', p),
-  agentWriteFile:  (p, c)    => ipcRenderer.invoke('agent:writeFile', p, c),
-  agentCreateFile: (p, c)    => ipcRenderer.invoke('agent:createFile', p, c),
-  agentDeleteFile: (p)       => ipcRenderer.invoke('agent:deleteFile', p),
-  agentListFiles:  (p)       => ipcRenderer.invoke('agent:listFiles', p),
-  agentSearch:     (q, d)    => ipcRenderer.invoke('agent:searchInFiles', q, d),
+  agentReadFile:            (p)         => ipcRenderer.invoke('agent:readFile', p),
+  agentWriteFile:           (p, c)      => ipcRenderer.invoke('agent:writeFile', p, c),
+  agentCreateFile:          (p, c)      => ipcRenderer.invoke('agent:createFile', p, c),
+  agentDeleteFile:          (p)         => ipcRenderer.invoke('agent:deleteFile', p),
+  agentListFiles:           (p)         => ipcRenderer.invoke('agent:listFiles', p),
+  agentSearch:              (q, d)      => ipcRenderer.invoke('agent:searchInFiles', q, d),
+  agentCreateDir:           (p)         => ipcRenderer.invoke('agent:createDir', p),
+  agentMoveFile:            (src, dest) => ipcRenderer.invoke('agent:moveFile', src, dest),
+  agentRunCommand:          (cmd, cwd)  => ipcRenderer.invoke('agent:runCommand', cmd, cwd),
+  agentGetProjectStructure: (p, depth)  => ipcRenderer.invoke('agent:getProjectStructure', p, depth),
   
   // DeepSeek streaming
   aiStreamDeepSeek: (msgs, model, apiKey, reqId) => 
