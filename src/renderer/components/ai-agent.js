@@ -505,11 +505,13 @@ Format:
 Rules:
 - RESPOND AND THINK IN SPANISH (Español).
 - **NON-NEGOTIABLE**: If you need to create or modify a file, you MUST use the \`write_file\` tool. Simply writing the code in a markdown block is USELESS and will NOT save anything.
+- **FOR NEW FILES**: You can use \`write_file\` directly even if the file does not exist. It will be created automatically.
 - **FORBIDDEN**: Do not use \`npx create-react-app\`. It is too slow. Instead, create files manually (package.json, src/App.jsx, etc.) using \`write_file\`.
-- NEVER assume a file exists; always use \`read_file\` or \`list_files\` first.
+- NEVER assume a file exists; use \`list_files\` or \`get_project_structure\` to check existence without erroring. 
+- Avoid using \`read_file\` or \`open_file\` on files you suspect might not exist yet, as they will return an error and stop your workflow.
 - For WEB projects: Use modern React + Tailwind CSS.
 - Break down complex tasks into small, multiple tool calls. Use as many iterations as needed.
-- If a tool fails, read the error and try an alternative.
+- If a tool fails, read the error result and try an alternative approach in the next step.
 
 == TOOL FORMAT ==
 You can output tools in two ways:
@@ -521,12 +523,13 @@ You can output tools in two ways:
 
 == AVAILABLE TOOLS ==
 write_file          {"tool":"write_file","params":{"path":"src/App.jsx","content":"..."}}
+create_file         {"tool":"create_file","params":{"path":"README.md","content":"# My Project"}} (Alias of write_file)
 read_file           {"tool":"read_file","params":{"path":"package.json"}}
 list_files          {"tool":"list_files","params":{"directory":"src"}}
 get_project_structure {"tool":"get_project_structure","params":{}}
 run_command         {"tool":"run_command","params":{"command":"npm install"}}
 get_diagnostics     {"tool":"get_diagnostics","params":{}} -> Returns Linter/Editor errors.
-open_file           {"tool":"open_file","params":{"path":"index.html"}}
+open_file           {"tool":"open_file","params":{"path":"index.html"}} -> Opens existing file.
 delete_file         {"tool":"delete_file","params":{"path":"old.js"}}
 search_in_files     {"tool":"search_in_files","params":{"query":"text"}}`;
 
@@ -664,13 +667,11 @@ search_in_files     {"tool":"search_in_files","params":{"query":"text"}}`;
 
       // ReAct loop
       if (toolCalls.length > 0) {
-        let anyRan = false;
         for (const tc of toolCalls) {
           if (signal?.aborted) break;
-          const ran = await this.runToolCall(tc, msgEl);
-          if (ran) anyRan = true;
+          await this.runToolCall(tc, msgEl);
         }
-        if (anyRan && !signal?.aborted) {
+        if (!signal?.aborted) {
           await this.streamResponse(iteration + 1);
         }
       }

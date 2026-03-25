@@ -44,10 +44,14 @@ export class HistoryManager {
       return
     }
 
-    // Lógica de agrupación inteligente (Debounce)
+    // Lógica de agrupación inteligente (Debounce + Detección de Frases)
+    const isPhraseEnd = /[.!?\n:;]$/.test(state.content.trim())
+    const timeElapsed = now - this.lastPushTime
+    
     if (!force && 
         history.index >= 0 && 
-        (now - this.lastPushTime) < this.groupingThreshold) {
+        timeElapsed < this.groupingThreshold &&
+        !isPhraseEnd) {
       // Actualizamos el estado actual en lugar de añadir uno nuevo
       history.stack[history.index] = {
         ...state,
@@ -75,6 +79,11 @@ export class HistoryManager {
     }
 
     this.lastPushTime = now
+
+    // Persistencia automática en disco
+    if (window.api?.historySave) {
+      window.api.historySave({ filePath, history: { stack: history.stack, index: history.index } })
+    }
   }
 
   /**

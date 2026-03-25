@@ -39,7 +39,8 @@ async function createWindow() {
       { role: 'quit', label: 'Salir' },
     ]},
     { label: 'Editar', submenu: [
-      { role: 'undo', label: 'Deshacer' }, { role: 'redo', label: 'Rehacer' },
+      { label: 'Deshacer', accelerator: 'CmdOrCtrl+Z', click: () => mainWin.webContents.send('menu:undo') },
+      { label: 'Rehacer',  accelerator: 'CmdOrCtrl+Shift+Z', click: () => mainWin.webContents.send('menu:redo') },
       { type: 'separator' },
       { role: 'cut', label: 'Cortar' }, { role: 'copy', label: 'Copiar' }, { role: 'paste', label: 'Pegar' },
     ]},

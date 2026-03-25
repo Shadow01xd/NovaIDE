@@ -52,7 +52,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // Menu events
   onMenu: (fn) => {
-    const events = ['openFolder','newFile','save','saveAs','toggleTerminal','toggleAI','toggleExtensions','toggleSearch']
+    const events = ['openFolder','newFile','save','saveAs','toggleTerminal','toggleAI','toggleExtensions','toggleSearch','undo','redo']
     const listeners = events.map(e => {
       const w = () => fn(e)
       ipcRenderer.on(`menu:${e}`, w)

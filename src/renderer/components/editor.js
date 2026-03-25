@@ -1729,6 +1729,16 @@ export async function createEditor(container, state, themeMgr = null) {
   }
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyZ, redoAction)
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyY, redoAction)
+  
+  // Handlers para el menú superior (main menu)
+  state.on('editorUndo', () => {
+    const prevState = historyManager.undo(state.currentFile)
+    if (prevState) applyHistoryState(editor, prevState)
+  })
+  state.on('editorRedo', () => {
+    const nextState = historyManager.redo(state.currentFile)
+    if (nextState) applyHistoryState(editor, nextState)
+  })
 
   // Timeline Visual: Ctrl+Alt+Z
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.KeyZ, () => {

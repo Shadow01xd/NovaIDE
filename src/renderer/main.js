@@ -257,6 +257,10 @@ window.api.onMenu(async (event) => {
       themeManager.cycleTheme(); break
     case 'openThemeSelector':
       themeSelector?.open(); break
+    case 'undo':
+      state.emit('editorUndo'); break
+    case 'redo':
+      state.emit('editorRedo'); break
   }
 })
 
