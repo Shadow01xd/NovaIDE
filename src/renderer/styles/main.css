@@ -1616,41 +1616,50 @@ html, body, #app { height: 100%; overflow: hidden; background: var(--bg1); color
 }
 .ai-msg-expand-btn:hover { color: var(--text0); background: var(--bg3); border-color: var(--text2); }
 
-/* ── Tool steps ──────────────────────────────────────────── */
+/* ── Tool steps (minimal Cursor-style) ───────────────────── */
 .ai-tool-steps {
-  margin: 6px 0 4px; display: flex; flex-direction: column; gap: 3px;
+  margin: 4px 0 2px; display: flex; flex-direction: column; gap: 1px;
 }
 .ai-tool-step {
-  display: flex; flex-direction: column; gap: 4px;
-  padding: 6px 10px; border-radius: var(--r-sm);
-  font-size: 11.5px; border: 1px solid transparent;
+  display: flex; align-items: center; gap: 7px;
+  padding: 2px 4px; border-radius: 4px;
+  font-size: 11.5px; font-family: var(--font-mono, monospace);
+  transition: opacity .2s;
 }
-.ai-step-row {
-  display: flex; align-items: flex-start; gap: 7px;
+/* Indicator cell */
+.ai-step-ind {
+  width: 14px; text-align: center; flex-shrink: 0;
+  font-size: 11px; line-height: 1;
 }
-.ai-tool-step--running {
-  background: rgba(129,140,248,.08); border-color: rgba(129,140,248,.18);
-  color: var(--accent);
-}
-.ai-tool-step--done {
-  background: rgba(16,185,129,.06); border-color: rgba(16,185,129,.15);
-  color: var(--green);
-}
-.ai-tool-step--error {
-  background: rgba(239,68,68,.07); border-color: rgba(239,68,68,.18);
-  color: var(--red);
-}
-.ai-tool-step--cancelled {
-  background: transparent; color: var(--text2); opacity: .5;
-}
-.ai-step-icon { font-size: 13px; width: 16px; text-align: center; flex-shrink: 0; margin-top: 1px; }
-.ai-step-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.ai-step-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ai-step-detail {
-  font-size: 10.5px; opacity: .65;
+/* Text */
+.ai-step-text {
+  flex: 1; min-width: 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  font-family: var(--font-mono, monospace);
 }
+/* Running */
+.ai-tool-step--running .ai-step-text { color: var(--text1); }
+.ai-tool-step--running .ai-step-ind  { color: var(--accent); }
+/* Done */
+.ai-tool-step--done .ai-step-ind  { color: var(--green); font-size: 10px; }
+.ai-tool-step--done .ai-step-text { color: var(--text3, #555); }
+/* Error */
+.ai-tool-step--error .ai-step-ind  { color: var(--red); }
+.ai-tool-step--error .ai-step-text { color: var(--red); opacity: .85; }
+/* Cancelled */
+.ai-tool-step--cancelled { opacity: .4; }
+.ai-tool-step--cancelled .ai-step-text { color: var(--text2); }
+
+/* CSS spinner for running steps */
+.ai-step-spinner {
+  display: inline-block;
+  width: 9px; height: 9px;
+  border: 1.5px solid rgba(129,140,248,.3);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: aiSpin .55s linear infinite;
+  vertical-align: middle;
+}
+@keyframes aiSpin { to { transform: rotate(360deg); } }
 
 /* ── Inline file diff (Cursor-style) ──────────────────────── */
 .ai-file-diff {

@@ -1361,65 +1361,59 @@ HERRAMIENTAS DISPONIBLES
     const trimmed = text.trimStart();
     if (trimmed.startsWith("{")) return ""; // Pure tool call — no mostrar nada
     // Hide thought blocks while streaming
-    const noThoughts = text.replace(/<thought>[\s\S]*?<\/thought>/gi, "").replace(/<thought>[\s\S]*/i, "");
+    const noThoughts = text
+      .replace(/<thought>[\s\S]*?<\/thought>/gi, "")
+      .replace(/<thought>[\s\S]*/i, "");
+    // Cut at the first inline tool call
     const jsonStart = noThoughts.search(/\n?\s*\{"tool"/);
-    if (jsonStart > 0) return this.stripToolCalls(noThoughts.slice(0, jsonStart)).trim();
-    return this.stripToolCalls(noThoughts);
+    // Also cut at the start of a ```json fenced block that's a tool call
+    const fenceStart = noThoughts.search(/\n?\s*```(?:json)?\s*\n\s*\{/);
+    const cutAt = Math.min(
+      jsonStart  >= 0 ? jsonStart  : Infinity,
+      fenceStart >= 0 ? fenceStart : Infinity,
+    );
+    const visible = cutAt < Infinity ? noThoughts.slice(0, cutAt) : noThoughts;
+    return this.stripToolCalls(visible).trim();
   }
 
-  // Elimina todos los tool-call JSON del texto final (stack-based)
+  // Elimina todos los tool-call JSON del texto final (bloques ```json y JSON inline)
   stripToolCalls(text) {
     if (!text) return "";
-    let result = "",
-      i = 0;
-    while (i < text.length) {
-      if (text[i] !== "{") {
-        result += text[i++];
-        continue;
-      }
-      let depth = 0,
-        j = i,
-        inStr = false,
-        esc = false;
-      while (j < text.length) {
-        const ch = text[j];
-        if (esc) {
-          esc = false;
-          j++;
-          continue;
-        }
-        if (ch === "\\" && inStr) {
-          esc = true;
-          j++;
-          continue;
-        }
-        if (ch === '"') {
-          inStr = !inStr;
-          j++;
-          continue;
-        }
+
+    // 1. Strip fenced code blocks (```json ... ``` or ``` ... ```) that contain tool calls
+    let cleaned = text.replace(/```(?:json)?\s*\n([\s\S]*?)\n?```/g, (match, inner) => {
+      const trimmed = inner.trim();
+      if (!trimmed.startsWith("{")) return match;
+      try {
+        const obj = JSON.parse(trimmed);
+        if (obj && typeof obj.tool === "string") return "";
+      } catch {}
+      return match;
+    });
+
+    // 2. Strip inline JSON tool calls {\"tool\":...}
+    let result = "", i = 0;
+    while (i < cleaned.length) {
+      if (cleaned[i] !== "{") { result += cleaned[i++]; continue; }
+      let depth = 0, j = i, inStr = false, esc = false;
+      while (j < cleaned.length) {
+        const ch = cleaned[j];
+        if (esc) { esc = false; j++; continue; }
+        if (ch === "\\" && inStr) { esc = true; j++; continue; }
+        if (ch === '"') { inStr = !inStr; j++; continue; }
         if (!inStr) {
           if (ch === "{") depth++;
-          else if (ch === "}") {
-            depth--;
-            if (depth === 0) {
-              j++;
-              break;
-            }
-          }
+          else if (ch === "}") { depth--; if (depth === 0) { j++; break; } }
         }
         j++;
       }
       if (depth === 0 && j > i) {
         try {
-          const obj = JSON.parse(text.slice(i, j));
-          if (obj && typeof obj.tool === "string") {
-            i = j;
-            continue;
-          }
+          const obj = JSON.parse(cleaned.slice(i, j));
+          if (obj && typeof obj.tool === "string") { i = j; continue; }
         } catch {}
       }
-      result += text[i++];
+      result += cleaned[i++];
     }
     return result.replace(/\n{3,}/g, "\n\n").trim();
   }
@@ -1576,12 +1570,12 @@ HERRAMIENTAS DISPONIBLES
           r.stderr && `stderr:\n${r.stderr}`,
           `exit: ${r.exitCode}`,
         ].filter(Boolean).join("\n");
-        this.addToolStep(msgEl, "done", tool, `exit ${r.exitCode}`);
+        this.updateToolStep(stepEl, "done", tool, params);
         this.messages.push({ role: "user", content: `[Resultado de "run_command"]\n${out}` });
         return true;
       } catch (err) {
         unlisten();
-        this.addToolStep(msgEl, "error", tool, err.message);
+        this.updateToolStep(stepEl, "error", tool, params);
         this.messages.push({ role: "user", content: `[Error en "run_command"]: ${err.message}` });
         return false;
       }
@@ -1601,17 +1595,14 @@ HERRAMIENTAS DISPONIBLES
 
     try {
       const result = await this.executeTool(tool, params);
-      const summary =
-        typeof result === "string"
-          ? result.slice(0, 300)
-          : JSON.stringify(result).slice(0, 300);
-      this.addToolStep(msgEl, "done", tool, summary);
+      // Update the running step in place → no second row added
+      this.updateToolStep(stepEl, "done", tool, params);
       this.messages.push({
         role: "user",
         content: `[Resultado de "${tool}"]\n${typeof result === "string" ? result : JSON.stringify(result, null, 2)}`,
       });
 
-      // ── Mostrar diff inline en el paso + editor ───────────────────────────
+      // ── Diff en chat (verde/rojo) + diff en editor (Monaco) ─────────────
       if (DIFF_TOOLS.has(tool) && params.path) {
         const fp = this.resolvePath(params.path);
         let newContent;
@@ -1619,7 +1610,7 @@ HERRAMIENTAS DISPONIBLES
           if (stepEl) this.renderParsedDiff(stepEl, params.diff || "", params.path);
           try {
             const r = await window.api.agentReadFile(fp);
-            newContent = r?.success ? (r.content ?? "") : (params.content ?? "");
+            newContent = r?.success ? (r.content ?? "") : "";
           } catch { newContent = ""; }
         } else {
           newContent = tool === "append_to_file"
@@ -1633,7 +1624,7 @@ HERRAMIENTAS DISPONIBLES
 
       return true;
     } catch (err) {
-      this.addToolStep(msgEl, "error", tool, err.message);
+      this.updateToolStep(stepEl, "error", tool, params);
       this.messages.push({
         role: "user",
         content: `[Error en "${tool}"]: ${err.message}`,
@@ -1719,28 +1710,55 @@ HERRAMIENTAS DISPONIBLES
   }
 
   describeAction(tool, params) {
+    const file  = (params.path || params.source || "").split(/[/\\]/).pop();
+    const dir   = (params.directory || ".").split(/[/\\]/).pop() || ".";
+    const files = (params.paths || []).length;
     const map = {
-      read_file: `Leer ${params.path}`,
-      read_multiple_files: `Leer ${(params.paths || []).length} archivos`,
-      append_to_file: `Agregar contenido a ${params.path}`,
-      apply_diff: `Aplicar cambios en ${params.path}`,
-      delete_directory: `Eliminar carpeta ${params.path}`,
-      write_file: `Escribir ${params.path}`,
-      create_file: `Crear ${params.path}`,
-      create_directory: `Crear carpeta ${params.path}`,
-      delete_file: `Eliminar ${params.path}`,
-      move_file: `Mover ${params.source} → ${params.destination}`,
-      list_files: `Listar ${params.directory || "."}`,
-      get_project_structure: "Estructura del proyecto",
-      search_in_files: `Buscar "${params.query}"`,
-      run_command: `$ ${params.command}`,
-      get_diagnostics: "Obtener errores del editor",
-      get_open_file: "Archivo abierto en editor",
-      open_file: `Abrir ${params.path}`,
-      insert_at_cursor: "Insertar en cursor",
-      replace_selection: "Reemplazar selección",
+      read_file:            `Leyendo ${file}`,
+      read_multiple_files:  `Leyendo ${files} archivo${files !== 1 ? "s" : ""}`,
+      write_file:           `Escribiendo ${file}`,
+      create_file:          `Creando ${file}`,
+      apply_diff:           `Editando ${file}`,
+      append_to_file:       `Actualizando ${file}`,
+      delete_file:          `Eliminando ${file}`,
+      delete_directory:     `Eliminando carpeta ${file}`,
+      move_file:            `Moviendo ${file}`,
+      create_directory:     `Creando carpeta`,
+      list_files:           `Explorando ${dir}`,
+      get_project_structure:"Analizando proyecto",
+      search_in_files:      `Buscando «${params.query || ""}»`,
+      run_command:          `$ ${(params.command || "").slice(0, 40)}`,
+      get_diagnostics:      "Verificando errores",
+      get_open_file:        "Leyendo editor",
+      open_file:            `Abriendo ${file}`,
+      insert_at_cursor:     "Insertando código",
+      replace_selection:    "Reemplazando selección",
     };
-    return map[tool] || `${tool}(${JSON.stringify(params).slice(0, 60)})`;
+    return map[tool] || tool;
+  }
+
+  /** Actualiza un step existente al completarse (en lugar de añadir otro) */
+  updateToolStep(stepEl, status, tool, params) {
+    if (!stepEl) return;
+    stepEl.className = `ai-tool-step ai-tool-step--${status}`;
+    const indEl  = stepEl.querySelector(".ai-step-ind");
+    const textEl = stepEl.querySelector(".ai-step-text");
+    if (!indEl || !textEl) return;
+
+    if (status === "done") {
+      indEl.innerHTML = "";
+      indEl.textContent = "✓";
+      const file = (params?.path || params?.source || params?.directory || "").split(/[/\\]/).pop();
+      textEl.textContent = file || tool;
+    } else if (status === "error") {
+      indEl.innerHTML = "";
+      indEl.textContent = "✗";
+      textEl.textContent = `Error — ${(params?.path || tool || "").split(/[/\\]/).pop()}`;
+    } else if (status === "cancelled") {
+      indEl.innerHTML = "";
+      indEl.textContent = "–";
+      textEl.textContent = "Cancelado";
+    }
   }
 
   /**
@@ -2334,30 +2352,19 @@ HERRAMIENTAS DISPONIBLES
     const stepsEl = msgEl.querySelector(".ai-tool-steps");
     if (!stepsEl) return;
 
-    const icons = { running: "⚙️", done: "✅", error: "❌", cancelled: "🚫" };
-    const labels = {
-      running: "Ejecutando",
-      done: "Completado",
-      error: "Error",
-      cancelled: "Cancelado",
-    };
-
     const step = document.createElement("div");
     step.className = `ai-tool-step ai-tool-step--${status}`;
 
-    // Texto del detalle con truncado
-    const detailShort =
-      detail.length > 120 ? detail.slice(0, 120) + "…" : detail;
-
-    step.innerHTML = `
-      <div class="ai-step-row">
-        <span class="ai-step-icon">${icons[status] || "•"}</span>
-        <span class="ai-step-body">
-          <span class="ai-step-label">${labels[status] || status}: <strong>${escapeHtml(tool)}</strong></span>
-          ${detailShort ? `<span class="ai-step-detail">${escapeHtml(detailShort)}</span>` : ""}
-        </span>
-      </div>
-    `;
+    if (status === "running") {
+      step.innerHTML = `<span class="ai-step-ind"><span class="ai-step-spinner"></span></span><span class="ai-step-text">${escapeHtml(detail)}</span>`;
+    } else if (status === "done") {
+      const name = detail.split(/[/\\]/).pop() || detail;
+      step.innerHTML = `<span class="ai-step-ind">✓</span><span class="ai-step-text">${escapeHtml(name)}</span>`;
+    } else if (status === "error") {
+      step.innerHTML = `<span class="ai-step-ind">✗</span><span class="ai-step-text">${escapeHtml(detail.slice(0, 80))}</span>`;
+    } else {
+      step.innerHTML = `<span class="ai-step-ind">–</span><span class="ai-step-text">Cancelado</span>`;
+    }
 
     stepsEl.appendChild(step);
     this.scrollToBottom();
