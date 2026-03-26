@@ -117,11 +117,15 @@ export class AIAgent {
             <button class="ai-tab ${this.activeTab === "chat" ? "active" : ""}"  data-tab="chat">Chat</button>
             <button class="ai-tab ${this.activeTab === "history" ? "active" : ""}" data-tab="history">Historial</button>
           </div>
-          <div class="ai-mode-selector">
-            <select id="ai-mode-select" class="ai-select-mini">
-              <option value="simple" ${this.mode === "simple" ? "selected" : ""}>Simple</option>
-              <option value="planner" ${this.mode === "planner" ? "selected" : ""}>Planificador</option>
-            </select>
+          <div class="ai-mode-toggle" id="ai-mode-toggle">
+            <button class="ai-mode-btn ${this.mode === "simple" ? "active" : ""}" data-mode="simple" title="Modo Simple — responde directo">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              Simple
+            </button>
+            <button class="ai-mode-btn ${this.mode === "planner" ? "active" : ""}" data-mode="planner" title="Modo Planificador — crea un plan y ejecuta fase por fase">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="14" x2="10" y2="14"/><line x1="8" y1="18" x2="14" y2="18"/></svg>
+              Plan
+            </button>
           </div>
           <span class="ai-model-badge" id="ai-model-badge">${escapeHtml(this.activeModel)}</span>
           <div class="ai-header-actions">
@@ -286,13 +290,21 @@ export class AIAgent {
         tab.addEventListener("click", () => this.switchTab(tab.dataset.tab)),
       );
 
-    // Mode selector
+    // Mode toggle buttons
     this.container
-      .querySelector("#ai-mode-select")
-      ?.addEventListener("change", (e) => {
-        this.mode = e.target.value;
+      .querySelector("#ai-mode-toggle")
+      ?.addEventListener("click", (e) => {
+        const btn = e.target.closest(".ai-mode-btn");
+        if (!btn) return;
+        const newMode = btn.dataset.mode;
+        if (newMode === this.mode) return;
+        this.mode = newMode;
         localStorage.setItem("ide_agent_mode", this.mode);
-        this.showStatus(`Modo: ${this.mode}`, "info");
+        this.container.querySelectorAll(".ai-mode-btn").forEach((b) =>
+          b.classList.toggle("active", b.dataset.mode === this.mode)
+        );
+        const labels = { simple: "⚡ Modo Simple", planner: "📋 Modo Planificador" };
+        this.showStatus(labels[this.mode] || this.mode, "info");
       });
 
     // Send / stop
@@ -785,30 +797,94 @@ REGLAS del diff:
     const folder = this.state.currentFolder || "(ninguna)";
     const file = this.state.currentFile || "(ninguno)";
     const projectName = folder !== "(ninguna)" ? folder.split(/[\\/]/).pop() : null;
+    const projectHint = this.projectType ? `\nTipo de proyecto: ${this.projectType}` : "";
 
-    return `Eres Nova Planner, el agente de planificación de NVCode.
-Eres experto en descomponer tareas complejas en pasos ejecutables.
-${projectName ? `Proyecto: **${projectName}** | ` : ""}Carpeta: ${folder}
+    const editor = this.state.editorInstance;
+    let editorCtx = "";
+    if (editor && file && file !== "(ninguno)") {
+      const content = editor.getValue();
+      const lang = file.split(".").pop() || "text";
+      const lineCount = content.split("\n").length;
+      editorCtx = `\n\n════════════════════════════════════════\nARCHIVO ACTIVO: ${file} (${lang}, ${lineCount} líneas)\n════════════════════════════════════════`;
+      if (content.length < 5000) editorCtx += `\n\`\`\`${lang}\n${content}\n\`\`\``;
+      else editorCtx += `\n(archivo grande — usa read_file para verlo)`;
+    }
+
+    return `Eres Nova Planner, el agente de planificación inteligente de NVCode IDE.
+Tu especialidad: descomponer tareas complejas en planes ejecutables y llevarlos a cabo con precisión quirúrgica.
+${projectName ? `Proyecto: **${projectName}**` : ""}${projectHint}
+Carpeta: ${folder} | Archivo activo: ${file}
 
 ════════════════════════════════════════
-PROTOCOLO DE PLANIFICACIÓN
+FLUJO OBLIGATORIO DE TRABAJO
 ════════════════════════════════════════
 
-1. **Analiza** el requerimiento completamente
-2. **Crea un plan** con fases numeradas y archivos afectados
-3. **Ejecuta fase por fase** usando las herramientas disponibles
-4. **Actualiza el estado** del plan con cada avance
+**RESPUESTA #1 — SIEMPRE empieza así:**
+1. Explora el proyecto brevemente (get_project_structure o list_files)
+2. Presenta el plan completo con este formato exacto:
 
-Formato del plan:
-📋 PLAN DE EJECUCIÓN:
-├── ✅ Fase 1: [completada]
-├── 🔄 Fase 2: [en progreso]
-├── ⏳ Fase 3: [pendiente]
-└── ⏳ Fase 4: [pendiente]
+---
+## 📋 Plan: [título descriptivo de la tarea]
 
-Tienes acceso a todas las herramientas del agente.
-Responde SIEMPRE en ESPAÑOL. El código va en inglés.
-Sé metódico, verifica cada paso antes de avanzar.`;
+| # | Fase | Archivos | Estado |
+|---|------|----------|--------|
+| 1 | [descripción] | [archivos afectados] | ⏳ Pendiente |
+| 2 | [descripción] | [archivos afectados] | ⏳ Pendiente |
+| N | [descripción] | [archivos afectados] | ⏳ Pendiente |
+
+**Comenzando con Fase 1...**
+---
+
+**RESPUESTAS SIGUIENTES — para cada fase:**
+1. Muestra el plan actualizado con el estado actual al inicio
+2. Ejecuta SOLO la fase actual (no saltes fases)
+3. Verifica con get_diagnostics si hay errores después de cambios de código
+4. Marca la fase como completada ✅ antes de pasar a la siguiente
+
+**ESTADOS del plan:**
+- ⏳ Pendiente — no iniciada
+- 🔄 En progreso — ejecutando ahora
+- ✅ Completada — finalizada y verificada
+- ❌ Bloqueada — error, necesita atención
+
+════════════════════════════════════════
+REGLAS CRÍTICAS
+════════════════════════════════════════
+
+1. **EXPLORA ANTES DE ACTUAR** — nunca asumas qué existe. Usa list_files o get_project_structure primero
+2. **LEE ANTES DE EDITAR** — usa read_file antes de apply_diff para obtener líneas exactas
+3. **apply_diff para ediciones** — NUNCA uses write_file en archivos existentes
+4. **Una fase a la vez** — completa y verifica cada fase antes de la siguiente
+5. **Si algo falla** — analiza el error, ajusta el plan, comunica el problema claramente
+6. **NUNCA dejes código roto** — si una fase falla, reviértela o corrígela antes de continuar
+7. **Responde en ESPAÑOL** siempre — el código va en inglés
+
+════════════════════════════════════════
+HERRAMIENTAS DISPONIBLES
+════════════════════════════════════════
+
+📖 LECTURA:
+  read_file            {"tool":"read_file","params":{"path":"ruta"}}
+  read_multiple_files  {"tool":"read_multiple_files","params":{"paths":["a.js","b.js"]}}
+  list_files           {"tool":"list_files","params":{"directory":"src"}}
+  get_project_structure {"tool":"get_project_structure","params":{}}
+  search_in_files      {"tool":"search_in_files","params":{"query":"texto"}}
+  get_diagnostics      {"tool":"get_diagnostics","params":{}}
+
+✏️ ESCRITURA:
+  apply_diff           {"tool":"apply_diff","params":{"path":"archivo","diff":"..."}}
+  write_file           {"tool":"write_file","params":{"path":"nuevo.js","content":"..."}}
+  create_file          {"tool":"create_file","params":{"path":"archivo","content":"..."}}
+  append_to_file       {"tool":"append_to_file","params":{"path":"archivo","content":"..."}}
+  delete_file          {"tool":"delete_file","params":{"path":"viejo.js"}}
+  move_file            {"tool":"move_file","params":{"source":"a","destination":"b"}}
+  create_directory     {"tool":"create_directory","params":{"path":"carpeta"}}
+
+🔧 ACCIONES:
+  run_command          {"tool":"run_command","params":{"command":"npm install"}}
+  open_file            {"tool":"open_file","params":{"path":"archivo"}}
+  write_memory         {"tool":"write_memory","params":{"key":"k","value":"v"}}
+  read_memory          {"tool":"read_memory","params":{"key":"k"}}${editorCtx}`;
   }
 
   async detectProjectType() {
