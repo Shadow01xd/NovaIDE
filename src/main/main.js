@@ -689,6 +689,45 @@ ipcMain.handle('agent:createDir', async (_, p) => {
   }
 })
 
+// Snapshot recursivo de un directorio — usado por el sistema de checkpoints
+// Devuelve todos los archivos con su contenido para poder restaurarlos
+ipcMain.handle('agent:readDirRecursive', async (_, dirPath) => {
+  const entries = []
+  const SKIP = new Set(['node_modules', '.git', 'dist', 'build', '.next', '__pycache__'])
+  const MAX_SIZE = 2 * 1024 * 1024 // 2 MB por archivo
+  function walk(dir) {
+    try {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name.startsWith('.') && !['env','.env'].includes(entry.name)) continue
+        if (SKIP.has(entry.name)) continue
+        const full = path.join(dir, entry.name)
+        if (entry.isDirectory()) {
+          entries.push({ path: full, isDirectory: true })
+          walk(full)
+        } else {
+          try {
+            const stat = fs.statSync(full)
+            if (stat.size > MAX_SIZE) {
+              entries.push({ path: full, isDirectory: false, content: null, skipped: true })
+            } else {
+              entries.push({ path: full, isDirectory: false, content: fs.readFileSync(full, 'utf-8') })
+            }
+          } catch {
+            entries.push({ path: full, isDirectory: false, content: '' })
+          }
+        }
+      }
+    } catch {}
+  }
+  try {
+    entries.push({ path: dirPath, isDirectory: true }) // raíz
+    walk(dirPath)
+    return { success: true, entries }
+  } catch (e) {
+    return { success: false, error: e.message }
+  }
+})
+
 ipcMain.handle('agent:moveFile', async (_, src, dest) => {
   try {
     const destDir = path.dirname(dest)

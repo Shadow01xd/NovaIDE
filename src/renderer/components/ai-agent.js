@@ -1095,7 +1095,25 @@ HERRAMIENTAS DISPONIBLES
           this.repetitionCount = 0;
         }
 
-        const results = await this.runToolCallsInParallel(toolCalls, msgEl, signal);
+        // Separar herramientas que ya fueron ejecutadas por detectEarlyToolCalls
+        // de las que aún no se han ejecutado — evita doble ejecución y doble confirmación
+        const earlyPromises = [];
+        const pendingCalls = [];
+        for (const tc of toolCalls) {
+          const key = JSON.stringify(tc);
+          if (this._earlyCallPromises?.has(key)) {
+            earlyPromises.push(this._earlyCallPromises.get(key));
+          } else {
+            pendingCalls.push(tc);
+          }
+        }
+        // Esperar a que terminen las early (puede que sigan corriendo)
+        if (earlyPromises.length) await Promise.allSettled(earlyPromises);
+        // Ejecutar las que no se procesaron early
+        if (pendingCalls.length) await this.runToolCallsInParallel(pendingCalls, msgEl, signal);
+        // Limpiar para la siguiente iteración
+        this._earlyCallPromises = new Map();
+
         if (!signal?.aborted) {
           await this.streamResponse(iteration + 1);
         }
@@ -1330,17 +1348,24 @@ HERRAMIENTAS DISPONIBLES
   }
 
   detectEarlyToolCalls(text, msgEl, signal) {
-    // Buscamos JSONs de herramientas cerrados } que aún no han sido procesados.
-    // Usamos un set para no repetir.
     const calls = this.parseToolCalls(text);
     if (!this.processedEarlyCalls) this.processedEarlyCalls = new Set();
+    if (!this._earlyCallPromises) this._earlyCallPromises = new Map();
+
+    // Tools que necesitan confirmación del usuario NO se ejecutan durante
+    // el streaming — se dejan para post-stream donde la UI está en reposo
+    // y el usuario puede ver e interactuar con la tarjeta de confirmación.
+    const NEEDS_CONFIRM = new Set([
+      "delete_file", "delete_directory", "run_command", "move_file",
+    ]);
 
     for (const tc of calls) {
+      if (NEEDS_CONFIRM.has(tc.tool)) continue; // dejar para post-stream
       const key = JSON.stringify(tc);
       if (!this.processedEarlyCalls.has(key)) {
         this.processedEarlyCalls.add(key);
-        // Ejecutar de forma asíncrona pero sin esperar al stream
-        this.runToolCall(tc, msgEl);
+        const promise = this.runToolCall(tc, msgEl);
+        this._earlyCallPromises.set(key, promise);
       }
     }
   }
@@ -1425,35 +1450,47 @@ HERRAMIENTAS DISPONIBLES
   // ==========================================================================
 
   async runToolCallsInParallel(toolCalls, msgEl, signal) {
-    const readOnlyTools = [
-      "read_file",
-      "list_files",
-      "get_project_structure",
-      "search_in_files",
-      "get_diagnostics",
-      "get_open_file",
-    ];
+    const readOnlyTools = new Set([
+      "read_file", "read_multiple_files", "list_files",
+      "get_project_structure", "search_in_files",
+      "get_diagnostics", "get_open_file",
+    ]);
 
-    const promises = toolCalls.map(async (tc) => {
-      if (signal?.aborted) return;
+    // Tools que necesitan confirmación del usuario → siempre en serie
+    // (no se pueden mostrar dos tarjetas al mismo tiempo)
+    const confirmTools = new Set([
+      "delete_file", "delete_directory", "run_command", "move_file",
+    ]);
 
-      const { tool, params } = tc;
+    const serial = [];   // se ejecutan una por una en orden
+    const parallel = []; // se pueden lanzar todas a la vez
 
-      // Si es una herramienta de escritura, usamos el bloqueo de archivo
-      if (!readOnlyTools.includes(tool) && params.path) {
-        const fp = this.resolvePath(params.path);
-        const currentLock = this.fileLocks.get(fp) || Promise.resolve();
-        const nextLock = currentLock.then(() => this.runToolCall(tc, msgEl));
-        this.fileLocks.set(fp, nextLock);
-        return nextLock;
+    for (const tc of toolCalls) {
+      if (confirmTools.has(tc.tool)) serial.push(tc);
+      else parallel.push(tc);
+    }
+
+    // Lanzar las paralelas (lecturas + escrituras sin confirmación)
+    const parallelResults = parallel.map((tc) => {
+      if (signal?.aborted) return Promise.resolve();
+      if (!readOnlyTools.has(tc.tool) && tc.params?.path) {
+        const fp = this.resolvePath(tc.params.path);
+        const lock = this.fileLocks.get(fp) || Promise.resolve();
+        const next = lock.then(() => this.runToolCall(tc, msgEl));
+        this.fileLocks.set(fp, next);
+        return next;
       }
-
-      // Si no es de escritura o no tiene path (ej. run_command), ejecutamos directamente (paralelo)
-      // Nota: run_command podría ser serializado si se requiere, pero por ahora lo dejamos libre.
       return this.runToolCall(tc, msgEl);
     });
 
-    return Promise.all(promises);
+    // Esperar las paralelas
+    await Promise.all(parallelResults);
+
+    // Ejecutar las que necesitan confirmación de una en una
+    for (const tc of serial) {
+      if (signal?.aborted) break;
+      await this.runToolCall(tc, msgEl);
+    }
   }
 
   resolvePath(p) {
@@ -1468,28 +1505,20 @@ HERRAMIENTAS DISPONIBLES
   async runToolCall(tc, msgEl) {
     const { tool, params } = tc;
 
-    if (this.shouldConfirmToolCall(tool, params)) {
-      const ok = confirm(this.buildToolConfirmationMessage(tool, params));
-      if (!ok) {
-        this.addToolStep(msgEl, "cancelled", tool, "Cancelado por el usuario");
-        this.messages.push({
-          role: "user",
-          content: `[Herramienta ${tool} cancelada]`,
-        });
-        return false;
-      }
-    }
+    // Confirmación in-chat (un solo punto — sin dobles)
+    const needsConfirm =
+      (tool === "delete_file" && this.confirmDelete) ||
+      (tool === "delete_directory" && this.confirmDelete) ||
+      this.shouldConfirmToolCall(tool, params);
 
-    // Solo pedir confirmación para delete_file
-    if (tool === "delete_file" && this.confirmDelete) {
-      const ok = confirm(
-        `El agente quiere ELIMINAR:\n${params.path}\n\n¿Confirmar?`,
-      );
+    if (needsConfirm) {
+      const msg = this.buildToolConfirmationMessage(tool, params);
+      const ok = await this.requestConfirmation(tool, params, msg);
       if (!ok) {
         this.addToolStep(msgEl, "cancelled", tool, "Cancelado por el usuario");
         this.messages.push({
           role: "user",
-          content: `[Herramienta ${tool} cancelada]`,
+          content: `[Herramienta ${tool} cancelada por el usuario]`,
         });
         return false;
       }
@@ -1497,41 +1526,35 @@ HERRAMIENTAS DISPONIBLES
 
     this.addToolStep(msgEl, "running", tool, this.describeAction(tool, params));
 
-    // ── Checkpoint: capturar estado ANTES de modificar archivos ──────────────
+    // ── Checkpoint: capturar estado ANTES de modificar ───────────────────────
     const FILE_MUTATING_TOOLS = new Set([
       "write_file", "create_file", "delete_file",
       "apply_diff", "move_file", "delete_directory",
     ]);
     if (FILE_MUTATING_TOOLS.has(tool)) {
-      const affectedPath =
-        params.path || params.source || params.destination || null;
+      const isDir = tool === "delete_directory";
+      const affectedPath = params.path || params.source || null;
+      const destPath = params.destination ? this.resolvePath(params.destination) : null;
+
       if (affectedPath) {
-        checkpointManager.stageFile(this.resolvePath(affectedPath));
-        if (params.destination) {
-          checkpointManager.stageFile(this.resolvePath(params.destination));
-        }
-        // Si no hay checkpoint activo para esta "vuelta" del agente, crearlo
+        const resolved = this.resolvePath(affectedPath);
+        // Stage con el tipo correcto (directorio vs archivo)
+        if (isDir) checkpointManager.stageDirectory(resolved);
+        else checkpointManager.stageFile(resolved);
+        if (destPath) checkpointManager.stageFile(destPath);
+
         if (!this._currentCheckpointId) {
+          // Crear el checkpoint ahora (lee los archivos actuales antes de la mutación)
           this._currentCheckpointId = await checkpointManager.createCheckpoint(
             `Antes de: ${this.describeAction(tool, params)}`
           );
         } else {
-          // Acumular en el checkpoint existente (misma vuelta del agente)
-          const cp = checkpointManager.getById(this._currentCheckpointId);
-          if (cp) {
-            const resolved = this.resolvePath(affectedPath);
-            if (!cp.files.some((f) => f.path === resolved)) {
-              try {
-                const r = await window.api.agentReadFile(resolved);
-                cp.files.push({
-                  path: resolved,
-                  content: r?.content ?? r ?? "",
-                  existed: true,
-                });
-              } catch {
-                cp.files.push({ path: resolved, content: "", existed: false });
-              }
-            }
+          // Añadir al checkpoint existente de esta sesión
+          await checkpointManager.addToCheckpoint(
+            this._currentCheckpointId, resolved, isDir ? 'directory' : 'file'
+          );
+          if (destPath) {
+            await checkpointManager.addToCheckpoint(this._currentCheckpointId, destPath, 'file');
           }
         }
       }
@@ -1585,6 +1608,82 @@ HERRAMIENTAS DISPONIBLES
     return map[tool] || `${tool}(${JSON.stringify(params).slice(0, 60)})`;
   }
 
+  /**
+   * Muestra una tarjeta de confirmación dentro del chat y devuelve true/false.
+   * La tarjeta se inyecta en #ai-messages Y se clona como overlay flotante
+   * para garantizar visibilidad independientemente del scroll.
+   */
+  requestConfirmation(tool, params, message) {
+    return new Promise((resolve) => {
+      const icons = {
+        delete_file: "🗑️", delete_directory: "🗑️",
+        run_command: "⚡", move_file: "↔️",
+      };
+
+      // Status bar
+      const statusEl = this.container.querySelector("#ai-status");
+      if (statusEl) {
+        statusEl.innerHTML = `<span class="ai-status-dot ai-status-dot--warn"></span>⬇ Confirma la acción abajo`;
+      }
+
+      // 1) Tarjeta dentro del chat (para el historial visual)
+      const messagesEl = this.container.querySelector("#ai-messages");
+      if (messagesEl) {
+        const ghost = document.createElement("div");
+        ghost.className = "ai-confirm-card";
+        ghost.innerHTML = `
+          <div class="ai-confirm-header">
+            <span class="ai-confirm-icon">${icons[tool] || "⚠️"}</span>
+            <span class="ai-confirm-title">Acción requerida</span>
+          </div>
+          <div class="ai-confirm-message">${escapeHtml(message)}</div>
+        `;
+        messagesEl.appendChild(ghost);
+        setTimeout(() => { messagesEl.scrollTop = messagesEl.scrollHeight; }, 0);
+      }
+
+      // 2) Overlay flotante garantizado — aparece sobre la barra de input
+      const contentArea = this.container.querySelector(".ai-content-area");
+      const host = contentArea || this.container;
+
+      const el = document.createElement("div");
+      el.className = "ai-confirm-overlay-card ai-confirm-card--active";
+      el.innerHTML = `
+        <div class="ai-confirm-header">
+          <span class="ai-confirm-icon">${icons[tool] || "⚠️"}</span>
+          <span class="ai-confirm-title">El agente necesita tu permiso</span>
+        </div>
+        <div class="ai-confirm-message">${escapeHtml(message)}</div>
+        <div class="ai-confirm-actions">
+          <button class="ai-confirm-btn ai-confirm-allow" type="button">✓ Permitir</button>
+          <button class="ai-confirm-btn ai-confirm-deny"  type="button">✗ Cancelar</button>
+        </div>
+      `;
+      host.appendChild(el);
+
+      const done = (ok) => {
+        // Eliminar overlay
+        el.remove();
+        // Marcar ghost como resuelto (si existe)
+        const ghost = messagesEl?.lastElementChild;
+        if (ghost?.classList.contains("ai-confirm-card")) {
+          ghost.classList.add("ai-confirm-resolved");
+          ghost.querySelector(".ai-confirm-message").insertAdjacentHTML(
+            "afterend",
+            ok
+              ? `<div class="ai-confirm-actions"><span class="ai-confirm-result ai-confirm-result--ok">✓ Permitido</span></div>`
+              : `<div class="ai-confirm-actions"><span class="ai-confirm-result ai-confirm-result--deny">✗ Cancelado</span></div>`
+          );
+        }
+        if (statusEl) statusEl.innerHTML = `<span class="ai-status-dot"></span>Agente trabajando…`;
+        resolve(ok);
+      };
+
+      el.querySelector(".ai-confirm-allow").addEventListener("click", () => done(true),  { once: true });
+      el.querySelector(".ai-confirm-deny") .addEventListener("click", () => done(false), { once: true });
+    });
+  }
+
   shouldConfirmToolCall(tool, params = {}) {
     if (tool === "run_command") {
       return this.confirmCommands || hasDangerousCommand(params.command || "");
@@ -1600,17 +1699,19 @@ HERRAMIENTAS DISPONIBLES
 
   buildToolConfirmationMessage(tool, params = {}) {
     if (tool === "delete_file") {
-      return `El agente quiere ELIMINAR:\n${params.path}\n\n¿Confirmar?`;
+      return `Eliminar permanentemente el archivo:\n${params.path}`;
+    }
+    if (tool === "delete_directory") {
+      return `Eliminar la carpeta y TODO su contenido:\n${params.path}`;
     }
     if (tool === "run_command") {
-      const cwd =
-        params.cwd || this.state.currentFolder || "(sin carpeta abierta)";
-      return `El agente quiere ejecutar este comando:\n${params.command || "(vacío)"}\n\nCarpeta:\n${cwd}\n\n¿Confirmar?`;
+      const cwd = params.cwd || this.state.currentFolder || "(sin carpeta abierta)";
+      return `Ejecutar comando en terminal:\n$ ${params.command || "(vacío)"}\n\nCarpeta: ${cwd}`;
     }
     if (tool === "move_file") {
-      return `El agente quiere mover:\n${params.source}\n→\n${params.destination}\n\n¿Confirmar?`;
+      return `Mover archivo:\n${params.source}\n→ ${params.destination}`;
     }
-    return `El agente quiere ejecutar ${tool}.\n\n¿Confirmar?`;
+    return `Ejecutar acción: ${tool}`;
   }
 
   isPathInWorkspace(filePath) {
@@ -2131,19 +2232,21 @@ HERRAMIENTAS DISPONIBLES
    */
   addCheckpointRestoreButton(checkpointId) {
     const cp = checkpointManager.getById(checkpointId);
-    if (!cp || cp.files.length === 0) return;
+    if (!cp || !cp.entries?.length) return;
 
     const messages = this.container.querySelector("#ai-messages");
     const el = document.createElement("div");
     el.className = "ai-checkpoint-bar";
     el.dataset.checkpointId = checkpointId;
 
-    const fileList = cp.files
-      .map((f) => {
-        const name = f.path.split(/[\\/]/).pop();
-        return `<span class="ai-cp-file">${escapeHtml(name)}</span>`;
-      })
-      .join("");
+    // Construir lista de badges: directorios primero, luego archivos individuales
+    const topLevel = cp.entries.map((e) => {
+      const name = e.path.split(/[\\/]/).pop();
+      const isDir = e.type === "directory";
+      const icon = isDir ? "📁" : "📄";
+      const filesCount = isDir && e.files ? ` (${e.files.length} archivos)` : "";
+      return `<span class="ai-cp-file ${isDir ? "ai-cp-file--dir" : ""}">${icon} ${escapeHtml(name)}${filesCount}</span>`;
+    }).join("");
 
     el.innerHTML = `
       <div class="ai-cp-info">
@@ -2151,10 +2254,10 @@ HERRAMIENTAS DISPONIBLES
           <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
           <path d="M3 3v5h5"/>
         </svg>
-        <span class="ai-cp-label">Checkpoint guardado</span>
-        <div class="ai-cp-files">${fileList}</div>
+        <span class="ai-cp-label">Checkpoint</span>
+        <div class="ai-cp-files">${topLevel}</div>
       </div>
-      <button class="ai-cp-restore-btn" title="Revertir cambios del agente a este checkpoint">
+      <button class="ai-cp-restore-btn" title="Revertir TODOS los cambios de esta sesión del agente">
         ↩ Restaurar
       </button>
     `;
@@ -2164,32 +2267,35 @@ HERRAMIENTAS DISPONIBLES
       btn.disabled = true;
       btn.textContent = "Restaurando...";
       try {
-        const { restored, deleted } = await checkpointManager.restoreCheckpoint(checkpointId);
+        const { restored, deleted, errors } = await checkpointManager.restoreCheckpoint(checkpointId);
 
-        // Sincronizar editor para los archivos restaurados
+        // Sincronizar editor para archivos restaurados
         for (const fp of restored) {
+          if (fp.includes("(directorio")) continue; // skip dir-only labels
           try {
             const r = await window.api.agentReadFile(fp);
-            const content = r?.content ?? r ?? "";
-            this.syncEditorIfOpen(fp, content);
+            if (r?.success) this.syncEditorIfOpen(fp, r.content);
           } catch {}
         }
-        // Cerrar tabs de archivos que se eliminaron
+        // Cerrar tabs de archivos que fueron eliminados (revertidos a no-existentes)
         for (const fp of deleted) {
           this.closeTabIfOpen(fp);
         }
         this.state.emit("refreshTree");
 
         btn.textContent = "✓ Restaurado";
-        btn.style.background = "var(--color-success, #238636)";
         el.classList.add("ai-cp-restored");
 
         const total = restored.length + deleted.length;
-        this.appendSystemNote(`Checkpoint restaurado: ${total} archivo(s) revertidos.`);
+        const errTxt = errors.length ? ` (${errors.length} error(es))` : "";
+        this.appendSystemNote(`✓ Checkpoint restaurado — ${total} elemento(s) revertido(s)${errTxt}`);
+        if (errors.length) {
+          errors.forEach(e => this.appendSystemNote(`  ⚠ ${e}`));
+        }
       } catch (err) {
         btn.disabled = false;
         btn.textContent = "↩ Restaurar";
-        this.appendSystemNote(`Error al restaurar: ${err.message}`);
+        this.appendSystemNote(`Error al restaurar checkpoint: ${err.message}`);
       }
     });
 

@@ -78,6 +78,7 @@ contextBridge.exposeInMainWorld('api', {
   agentRunCommand:          (cmd, cwd)  => ipcRenderer.invoke('agent:runCommand', cmd, cwd),
   agentGetProjectStructure: (p, depth)  => ipcRenderer.invoke('agent:getProjectStructure', p, depth),
   agentApplyDiff:           (p, diff)   => ipcRenderer.invoke('agent:applyDiff', p, diff),
+  agentReadDirRecursive:    (p)         => ipcRenderer.invoke('agent:readDirRecursive', p),
   
   // DeepSeek streaming
   aiStreamDeepSeek: (msgs, model, apiKey, reqId) => 
