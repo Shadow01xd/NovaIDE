@@ -99,9 +99,10 @@ export class AIAgent {
   mount() {
     this.render();
     this.attachEventListeners();
+    this.updateUIState(); // garantizar estado inicial correcto
     this.loadModelList();
-    this.loadSession(); // Restaurar sesión si existe
-    this.detectProjectType(); // Detectar tipo de proyecto
+    this.loadSession(); // Restaurar sesión si hay carpeta abierta
+    this.detectProjectType();
     this.setupInlineCompletions();
     return this;
   }
@@ -1524,7 +1525,7 @@ HERRAMIENTAS DISPONIBLES
       }
     }
 
-    this.addToolStep(msgEl, "running", tool, this.describeAction(tool, params));
+    const stepEl = this.addToolStep(msgEl, "running", tool, this.describeAction(tool, params));
 
     // ── Checkpoint: capturar estado ANTES de modificar ───────────────────────
     const FILE_MUTATING_TOOLS = new Set([
@@ -1538,18 +1539,15 @@ HERRAMIENTAS DISPONIBLES
 
       if (affectedPath) {
         const resolved = this.resolvePath(affectedPath);
-        // Stage con el tipo correcto (directorio vs archivo)
         if (isDir) checkpointManager.stageDirectory(resolved);
         else checkpointManager.stageFile(resolved);
         if (destPath) checkpointManager.stageFile(destPath);
 
         if (!this._currentCheckpointId) {
-          // Crear el checkpoint ahora (lee los archivos actuales antes de la mutación)
           this._currentCheckpointId = await checkpointManager.createCheckpoint(
             `Antes de: ${this.describeAction(tool, params)}`
           );
         } else {
-          // Añadir al checkpoint existente de esta sesión
           await checkpointManager.addToCheckpoint(
             this._currentCheckpointId, resolved, isDir ? 'directory' : 'file'
           );
@@ -1560,6 +1558,51 @@ HERRAMIENTAS DISPONIBLES
       }
     }
     // ────────────────────────────────────────────────────────────────────────
+
+    // ── Preview en vivo para run_command ─────────────────────────────────────
+    if (tool === "run_command" && window.api.agentRunCommandLive) {
+      const cwd = params.cwd
+        ? this.resolvePath(params.cwd)
+        : this.state.currentFolder;
+      if (!cwd) {
+        this.addToolStep(msgEl, "error", tool, "No hay carpeta abierta.");
+        this.messages.push({ role: "user", content: `[Error en "run_command"]: No hay carpeta abierta.` });
+        return false;
+      }
+
+      // Área de output en tiempo real
+      const preview = document.createElement("pre");
+      preview.className = "ai-cmd-preview";
+      stepEl?.appendChild(preview);
+      this.scrollToBottom();
+
+      const reqId = `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const unlisten = window.api.onCmdOutput(({ reqId: id, data }) => {
+        if (id !== reqId) return;
+        preview.textContent += data;
+        preview.scrollTop = preview.scrollHeight;
+        this.scrollToBottom();
+      });
+
+      try {
+        const r = await window.api.agentRunCommandLive(params.command, cwd, reqId);
+        unlisten();
+        const out = [
+          r.stdout && `stdout:\n${r.stdout}`,
+          r.stderr && `stderr:\n${r.stderr}`,
+          `exit: ${r.exitCode}`,
+        ].filter(Boolean).join("\n");
+        this.addToolStep(msgEl, "done", tool, `exit ${r.exitCode}`);
+        this.messages.push({ role: "user", content: `[Resultado de "run_command"]\n${out}` });
+        return true;
+      } catch (err) {
+        unlisten();
+        this.addToolStep(msgEl, "error", tool, err.message);
+        this.messages.push({ role: "user", content: `[Error en "run_command"]: ${err.message}` });
+        return false;
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     try {
       const result = await this.executeTool(tool, params);
@@ -2105,7 +2148,7 @@ HERRAMIENTAS DISPONIBLES
     }
 
     messages.appendChild(el);
-    this.scrollToBottom();
+    this.scrollToBottom(true); // force: new message always scrolls
     return el;
   }
 
@@ -2113,7 +2156,7 @@ HERRAMIENTAS DISPONIBLES
     const c = el.querySelector(".ai-msg-content");
     if (!c) return;
     c.innerHTML =
-      (text ? renderMarkdown(text) : "") + '<span class="ai-cursor">▋</span>';
+      (text ? renderMarkdown(text, true) : "") + '<span class="ai-cursor">▋</span>';
     this.scrollToBottom();
   }
 
@@ -2215,15 +2258,18 @@ HERRAMIENTAS DISPONIBLES
       detail.length > 120 ? detail.slice(0, 120) + "…" : detail;
 
     step.innerHTML = `
-      <span class="ai-step-icon">${icons[status] || "•"}</span>
-      <span class="ai-step-body">
-        <span class="ai-step-label">${labels[status] || status}: <strong>${escapeHtml(tool)}</strong></span>
-        ${detailShort ? `<span class="ai-step-detail">${escapeHtml(detailShort)}</span>` : ""}
-      </span>
+      <div class="ai-step-row">
+        <span class="ai-step-icon">${icons[status] || "•"}</span>
+        <span class="ai-step-body">
+          <span class="ai-step-label">${labels[status] || status}: <strong>${escapeHtml(tool)}</strong></span>
+          ${detailShort ? `<span class="ai-step-detail">${escapeHtml(detailShort)}</span>` : ""}
+        </span>
+      </div>
     `;
 
     stepsEl.appendChild(step);
     this.scrollToBottom();
+    return step;
   }
 
   /**
@@ -2312,9 +2358,13 @@ HERRAMIENTAS DISPONIBLES
     this.scrollToBottom();
   }
 
-  scrollToBottom() {
+  scrollToBottom(force = false) {
     const c = this.container.querySelector("#ai-messages");
-    if (c) c.scrollTop = c.scrollHeight;
+    if (!c) return;
+    // Only auto-scroll if user is already within 140px of the bottom,
+    // so they can scroll up to read without the view jumping back down.
+    const nearBottom = c.scrollHeight - c.scrollTop - c.clientHeight < 140;
+    if (force || nearBottom) c.scrollTop = c.scrollHeight;
   }
 
   async summarizeOldContext() {
@@ -2462,6 +2512,7 @@ HERRAMIENTAS DISPONIBLES
   }
 
   async saveSession() {
+    if (!this.state.currentFolder) return; // sin carpeta no hay sesión
     const session = {
       messages: this.messages,
       mode: this.mode,
@@ -2469,25 +2520,28 @@ HERRAMIENTAS DISPONIBLES
       provider: this.provider,
       date: new Date().toISOString(),
     };
-    await window.api.agentWriteFile(".ide/session.json", JSON.stringify(session, null, 2));
+    const sessionPath = this.state.currentFolder + "/.ide/session.json";
+    await window.api.agentWriteFile(sessionPath, JSON.stringify(session, null, 2));
   }
 
   async loadSession() {
+    // Solo restaurar si hay carpeta abierta (la sesión tiene contexto de proyecto)
+    if (!this.state.currentFolder) return;
     try {
-      const r = await window.api.agentReadFile(".ide/session.json");
-      if (r.success) {
-        const session = JSON.parse(r.content);
-        if (confirm("Se encontró una sesión guardada. ¿Deseas restaurarla?")) {
-          this.messages = session.messages;
-          this.mode = session.mode;
-          this.activeModel = session.model;
-          this.provider = session.provider;
-          this.render(); // Re-render para actualizar UI
-          this.attachEventListeners();
-          this.switchTab("agent");
-          this.appendSystemNote("Sesión restaurada.");
-        }
-      }
+      const sessionPath = this.state.currentFolder + "/.ide/session.json";
+      const r = await window.api.agentReadFile(sessionPath);
+      if (!r?.success) return;
+      const session = JSON.parse(r.content);
+      if (!session?.messages?.length) return;
+      this.messages = session.messages;
+      if (session.mode) this.mode = session.mode;
+      if (session.model) this.activeModel = session.model;
+      if (session.provider) this.provider = session.provider;
+      this.render();
+      this.attachEventListeners();
+      this.updateUIState();
+      this.switchTab("agent");
+      this.appendSystemNote("Sesión anterior restaurada.");
     } catch {}
   }
 

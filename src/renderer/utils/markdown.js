@@ -25,11 +25,21 @@ export function escapeHtml(s) {
  * @param {string} text - The markdown text to render.
  * @returns {string} - The rendered HTML.
  */
-export function renderMarkdown(text) {
+export function renderMarkdown(text, streaming = false) {
   if (!text) return '';
 
+  // During streaming, close any unclosed code fence so it renders immediately
+  let processedText = text;
+  if (streaming) {
+    const fenceCount = (text.match(/```/g) || []).length;
+    if (fenceCount % 2 !== 0) {
+      // Odd number of fences = one open block not yet closed → close it
+      processedText = text + '\n```';
+    }
+  }
+
   // Split into parts to handle code blocks differently
-  const parts = text.split(/(```[\s\S]*?```)/g);
+  const parts = processedText.split(/(```[\s\S]*?```)/g);
 
   return parts.map(part => {
     if (part.startsWith('```')) {

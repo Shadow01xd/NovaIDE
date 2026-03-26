@@ -76,6 +76,12 @@ contextBridge.exposeInMainWorld('api', {
   agentCreateDir:           (p)         => ipcRenderer.invoke('agent:createDir', p),
   agentMoveFile:            (src, dest) => ipcRenderer.invoke('agent:moveFile', src, dest),
   agentRunCommand:          (cmd, cwd)  => ipcRenderer.invoke('agent:runCommand', cmd, cwd),
+  agentRunCommandLive:      (cmd, cwd, reqId) => ipcRenderer.invoke('agent:runCommandLive', cmd, cwd, reqId),
+  onCmdOutput: (fn) => {
+    const w = (_, d) => fn(d)
+    ipcRenderer.on('agent:cmdOutput', w)
+    return () => ipcRenderer.removeListener('agent:cmdOutput', w)
+  },
   agentGetProjectStructure: (p, depth)  => ipcRenderer.invoke('agent:getProjectStructure', p, depth),
   agentApplyDiff:           (p, diff)   => ipcRenderer.invoke('agent:applyDiff', p, diff),
   agentReadDirRecursive:    (p)         => ipcRenderer.invoke('agent:readDirRecursive', p),

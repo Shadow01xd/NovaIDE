@@ -1512,9 +1512,12 @@ html, body, #app { height: 100%; overflow: hidden; background: var(--bg1); color
   margin: 6px 0 4px; display: flex; flex-direction: column; gap: 3px;
 }
 .ai-tool-step {
-  display: flex; align-items: flex-start; gap: 7px;
+  display: flex; flex-direction: column; gap: 4px;
   padding: 6px 10px; border-radius: var(--r-sm);
   font-size: 11.5px; border: 1px solid transparent;
+}
+.ai-step-row {
+  display: flex; align-items: flex-start; gap: 7px;
 }
 .ai-tool-step--running {
   background: rgba(129,140,248,.08); border-color: rgba(129,140,248,.18);
@@ -1539,6 +1542,31 @@ html, body, #app { height: 100%; overflow: hidden; background: var(--bg1); color
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   font-family: var(--font-mono, monospace);
 }
+
+/* ── Live command preview ──────────────────────────────────── */
+.ai-cmd-preview {
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: rgba(0,0,0,.4);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 6px;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px; line-height: 1.55;
+  color: #d4d4d4;
+  max-height: 180px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  width: 100%;
+  box-sizing: border-box;
+}
+.ai-cmd-preview:empty::before {
+  content: "Ejecutando…";
+  opacity: .4;
+  font-style: italic;
+}
+.ai-cmd-preview::-webkit-scrollbar { width: 3px; }
+.ai-cmd-preview::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 2px; }
 
 /* System note */
 .ai-system-note {

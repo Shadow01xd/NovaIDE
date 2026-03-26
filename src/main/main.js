@@ -759,6 +759,36 @@ ipcMain.handle('agent:runCommand', async (_, command, cwd) => {
   })
 })
 
+// Versión con output en tiempo real usando spawn
+ipcMain.handle('agent:runCommandLive', (event, command, cwd, reqId) => {
+  if (!isCommandAllowed(command)) {
+    return { success: false, stdout: '', stderr: `Comando no permitido: ${command.split(' ')[0]}`, exitCode: 1 };
+  }
+  return new Promise((resolve) => {
+    const { spawn } = require('child_process')
+    const rootDir = cwd || os.homedir()
+    const proc = spawn(command, [], { cwd: rootDir, shell: true, timeout: 60000 })
+    let stdout = '', stderr = ''
+
+    proc.stdout.on('data', (chunk) => {
+      const text = chunk.toString()
+      stdout += text
+      if (!event.sender.isDestroyed()) event.sender.send('agent:cmdOutput', { reqId, data: text })
+    })
+    proc.stderr.on('data', (chunk) => {
+      const text = chunk.toString()
+      stderr += text
+      if (!event.sender.isDestroyed()) event.sender.send('agent:cmdOutput', { reqId, data: text })
+    })
+    proc.on('close', (code) => {
+      resolve({ success: code === 0, stdout: stdout.trim(), stderr: stderr.trim(), exitCode: code ?? 0 })
+    })
+    proc.on('error', (err) => {
+      resolve({ success: false, stdout: '', stderr: err.message, exitCode: 1 })
+    })
+  })
+})
+
 ipcMain.handle('agent:getProjectStructure', async (_, rootPath, maxDepth = 4) => {
   function buildTree(dir, depth) {
     if (depth > maxDepth) return []
