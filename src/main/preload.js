@@ -83,6 +83,12 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('agent:cmdOutput', w)
     return () => ipcRenderer.removeListener('agent:cmdOutput', w)
   },
+  onServerPort: (fn) => {
+    const w = (_, d) => fn(d)
+    ipcRenderer.on('agent:serverPort', w)
+    return () => ipcRenderer.removeListener('agent:serverPort', w)
+  },
+  killServer: (reqId) => ipcRenderer.invoke('agent:killServer', reqId),
   agentGetProjectStructure: (p, depth)  => ipcRenderer.invoke('agent:getProjectStructure', p, depth),
   agentApplyDiff:           (p, diff)   => ipcRenderer.invoke('agent:applyDiff', p, diff),
   agentReadDirRecursive:    (p)         => ipcRenderer.invoke('agent:readDirRecursive', p),

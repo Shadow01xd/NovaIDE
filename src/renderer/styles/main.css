@@ -1733,6 +1733,47 @@ html, body, #app { height: 100%; overflow: hidden; background: var(--bg1); color
 .ai-cmd-preview::-webkit-scrollbar { width: 3px; }
 .ai-cmd-preview::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 2px; }
 
+/* ── Server preview (iframe) ─────────────────────────────── */
+.ai-server-preview {
+  margin-top: 8px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.1);
+  width: 100%; box-sizing: border-box;
+}
+.ai-server-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 10px;
+  background: var(--bg2);
+  border-bottom: 1px solid rgba(255,255,255,.07);
+}
+.ai-server-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #3fb950; flex-shrink: 0;
+  box-shadow: 0 0 6px rgba(63,185,80,.6);
+}
+.ai-server-url {
+  flex: 1; font-size: 11px;
+  font-family: var(--font-mono); color: var(--text2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ai-server-actions { display: flex; gap: 2px; flex-shrink: 0; }
+.ai-server-btn {
+  background: transparent; border: none;
+  color: var(--text2); padding: 2px 6px;
+  border-radius: 4px; cursor: pointer;
+  font-size: 13px; transition: all .12s;
+  line-height: 1;
+}
+.ai-server-btn:hover { color: var(--text0); background: var(--bg3); }
+.ai-server-btn--stop { color: #f85149; }
+.ai-server-btn--stop:hover { background: rgba(248,81,73,.15); }
+.ai-server-frame {
+  width: 100%; height: 320px;
+  border: none; display: block;
+  background: #fff;
+}
+
 /* System note */
 .ai-system-note {
   text-align: center; font-size: 11px; color: var(--text2);

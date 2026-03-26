@@ -772,33 +772,73 @@ ipcMain.handle('agent:runCommand', async (_, command, cwd) => {
 })
 
 // Versión con output en tiempo real usando spawn
+// Running dev servers — keyed by reqId so they can be killed
+const _runningServers = new Map()
+
 ipcMain.handle('agent:runCommandLive', (event, command, cwd, reqId) => {
   if (!isCommandAllowed(command)) {
     return { success: false, stdout: '', stderr: `Comando no permitido: ${command.split(' ')[0]}`, exitCode: 1 };
   }
+
+  // Detect long-running dev server commands
+  const isServer = /^(npm(\s+run)?\s+(dev|start|serve|preview)|yarn\s+(dev|start|serve|preview)|pnpm(\s+run)?\s+(dev|start|serve|preview)|npx\s+(vite|serve|http-server|live-server)|vite(\s|$)|python3?\s+-m\s+http\.server|node\s+.*(server|app)\.(js|ts|mjs)|deno\s+run)/i.test(command.trim())
+
   return new Promise((resolve) => {
     const { spawn } = require('child_process')
     const rootDir = cwd || os.homedir()
-    const proc = spawn(command, [], { cwd: rootDir, shell: true, timeout: 60000 })
-    let stdout = '', stderr = ''
+    const proc = spawn(command, [], { cwd: rootDir, shell: true })
+    let stdout = '', stderr = '', settled = false, detectedPort = null
+
+    if (isServer) _runningServers.set(reqId, proc)
+
+    const settle = (exitCode, isServer = false) => {
+      if (settled) return
+      settled = true
+      _runningServers.delete(reqId)
+      resolve({ success: exitCode === 0 || isServer, stdout: stdout.trim(), stderr: stderr.trim(), exitCode: exitCode ?? 0, isServer, port: detectedPort })
+    }
+
+    const checkPort = (text) => {
+      if (detectedPort) return
+      const m = text.match(/https?:\/\/(?:localhost|127\.0\.0\.1):(\d+)/i)
+               || text.match(/[Ll]ocal(?:\s+Server)?[:\s]+https?:\/\/[^:]+:(\d+)/i)
+               || text.match(/[Rr]unning\s+(?:on|at)\s+.*:(\d{4,5})/i)
+               || text.match(/[Pp]ort[:\s]+(\d{4,5})/i)
+               || text.match(/:(\d{4,5})\s*[→\-–>]/i)
+      if (m) {
+        detectedPort = parseInt(m[1])
+        if (!event.sender.isDestroyed()) event.sender.send('agent:serverPort', { reqId, port: detectedPort })
+        if (isServer) setTimeout(() => settle(0, true), 600) // resolve soon after port found
+      }
+    }
 
     proc.stdout.on('data', (chunk) => {
       const text = chunk.toString()
       stdout += text
       if (!event.sender.isDestroyed()) event.sender.send('agent:cmdOutput', { reqId, data: text })
+      if (isServer) checkPort(text)
     })
     proc.stderr.on('data', (chunk) => {
       const text = chunk.toString()
       stderr += text
       if (!event.sender.isDestroyed()) event.sender.send('agent:cmdOutput', { reqId, data: text })
+      if (isServer) checkPort(text)
     })
-    proc.on('close', (code) => {
-      resolve({ success: code === 0, stdout: stdout.trim(), stderr: stderr.trim(), exitCode: code ?? 0 })
-    })
-    proc.on('error', (err) => {
-      resolve({ success: false, stdout: '', stderr: err.message, exitCode: 1 })
-    })
+    proc.on('close', (code) => settle(code))
+    proc.on('error', (err) => settle(1))
+
+    // Safety timeouts
+    if (isServer) setTimeout(() => settle(0, true), 25000) // max 25s wait for server
+    else          setTimeout(() => settle(1),        60000) // 60s for normal commands
   })
+})
+
+ipcMain.handle('agent:killServer', (_, reqId) => {
+  const proc = _runningServers.get(reqId)
+  if (!proc) return { success: false }
+  try { proc.kill('SIGTERM') } catch {}
+  _runningServers.delete(reqId)
+  return { success: true }
 })
 
 ipcMain.handle('agent:getProjectStructure', async (_, rootPath, maxDepth = 4) => {

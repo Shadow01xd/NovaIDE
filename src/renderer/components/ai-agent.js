@@ -1555,6 +1555,15 @@ HERRAMIENTAS DISPONIBLES
       this.scrollToBottom();
 
       const reqId = `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+      // Escuchar detección de puerto para mostrar preview del servidor
+      let previewShown = false;
+      const unlistenPort = window.api.onServerPort?.((data) => {
+        if (data.reqId !== reqId || previewShown) return;
+        previewShown = true;
+        this._showServerPreview(stepEl, data.port, reqId);
+      });
+
       const unlisten = window.api.onCmdOutput(({ reqId: id, data }) => {
         if (id !== reqId) return;
         preview.textContent += data;
@@ -1565,16 +1574,20 @@ HERRAMIENTAS DISPONIBLES
       try {
         const r = await window.api.agentRunCommandLive(params.command, cwd, reqId);
         unlisten();
-        const out = [
-          r.stdout && `stdout:\n${r.stdout}`,
-          r.stderr && `stderr:\n${r.stderr}`,
-          `exit: ${r.exitCode}`,
-        ].filter(Boolean).join("\n");
+        unlistenPort?.();
+        if (r.port && !previewShown) {
+          previewShown = true;
+          this._showServerPreview(stepEl, r.port, reqId);
+        }
+        const out = r.isServer
+          ? `Servidor ejecutándose en http://localhost:${r.port || "?"}`
+          : [r.stdout && `stdout:\n${r.stdout}`, r.stderr && `stderr:\n${r.stderr}`, `exit: ${r.exitCode}`].filter(Boolean).join("\n");
         this.updateToolStep(stepEl, "done", tool, params);
         this.messages.push({ role: "user", content: `[Resultado de "run_command"]\n${out}` });
         return true;
       } catch (err) {
         unlisten();
+        unlistenPort?.();
         this.updateToolStep(stepEl, "error", tool, params);
         this.messages.push({ role: "user", content: `[Error en "run_command"]: ${err.message}` });
         return false;
@@ -2729,6 +2742,37 @@ HERRAMIENTAS DISPONIBLES
       },
       freeInlineCompletions: () => {},
     });
+  }
+
+  _showServerPreview(stepEl, port, reqId) {
+    if (!stepEl || !port) return;
+    const url = `http://localhost:${port}`;
+
+    const wrap = document.createElement("div");
+    wrap.className = "ai-server-preview";
+    wrap.innerHTML = `
+      <div class="ai-server-bar">
+        <span class="ai-server-dot"></span>
+        <span class="ai-server-url">${escapeHtml(url)}</span>
+        <div class="ai-server-actions">
+          <button class="ai-server-btn" data-a="reload" title="Recargar">↻</button>
+          <button class="ai-server-btn" data-a="open" title="Abrir en navegador">⤢</button>
+          <button class="ai-server-btn ai-server-btn--stop" data-a="stop" title="Detener">■</button>
+        </div>
+      </div>
+      <iframe class="ai-server-frame" src="${escapeHtml(url)}" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"></iframe>
+    `;
+
+    const frame = wrap.querySelector(".ai-server-frame");
+    wrap.querySelector('[data-a="reload"]').onclick = () => { frame.src = frame.src; };
+    wrap.querySelector('[data-a="open"]').onclick   = () => { window.api.openExternal?.(url); };
+    wrap.querySelector('[data-a="stop"]').onclick   = async () => {
+      await window.api.killServer?.(reqId);
+      wrap.remove();
+    };
+
+    stepEl.appendChild(wrap);
+    this.scrollToBottom();
   }
 
   showStatus(msg, type = "info") {
