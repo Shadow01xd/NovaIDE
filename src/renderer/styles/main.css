@@ -1457,13 +1457,14 @@ html, body, #app { height: 100%; overflow: hidden; background: var(--bg1); color
 .ai-checkbox-label input { margin: 0; accent-color: var(--accent); }
 
 /* ── Content area ────────────────────────────────────────── */
-.ai-content-area { flex: 1; overflow: hidden; display: flex; flex-direction: column; position: relative; }
-.ai-chat-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.ai-content-area { flex: 1; overflow: hidden; display: flex; flex-direction: column; position: relative; min-width: 0; }
+.ai-chat-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
 
 .ai-messages {
-  flex: 1; overflow-y: auto;
+  flex: 1; overflow-y: auto; overflow-x: hidden;
   padding: 20px 14px 160px 14px;
   display: flex; flex-direction: column; gap: 0;
+  min-width: 0; width: 100%;
 }
 .ai-messages::-webkit-scrollbar { width: 3px; }
 .ai-messages::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 2px; }
@@ -1512,8 +1513,10 @@ html, body, #app { height: 100%; overflow: hidden; background: var(--bg1); color
 .ai-msg {
   display: flex; flex-direction: column;
   font-size: 13px; line-height: 1.65;
-  word-break: break-word; animation: slideUp .18s ease-out;
+  word-break: break-word; overflow-wrap: break-word;
+  animation: slideUp .18s ease-out;
   padding: 10px 0;
+  min-width: 0; max-width: 100%;
 }
 .ai-msg + .ai-msg { border-top: 1px solid rgba(255,255,255,.03); }
 
@@ -1525,7 +1528,8 @@ html, body, #app { height: 100%; overflow: hidden; background: var(--bg1); color
   color: #fff; border-radius: 18px 18px 4px 18px;
   padding: 10px 14px;
   box-shadow: 0 4px 16px rgba(99,102,241,.25);
-  max-width: 100%;
+  max-width: 100%; min-width: 0;
+  word-break: break-word; overflow-wrap: break-word;
 }
 .ai-msg--user .ai-msg-content { color: #fff; font-size: 13px; }
 
@@ -1546,9 +1550,9 @@ html, body, #app { height: 100%; overflow: hidden; background: var(--bg1); color
 }
 .ai-msg--assistant .ai-msg-bubble {
   background: transparent; padding: 0;
-  max-width: 100%; width: 100%;
+  max-width: 100%; width: 100%; min-width: 0; overflow: hidden;
 }
-.ai-msg-content { color: var(--text0); }
+.ai-msg-content { color: var(--text0); min-width: 0; overflow-wrap: break-word; word-break: break-word; }
 .ai-msg-content p { margin: 0 0 8px; }
 .ai-msg-content p:last-child { margin-bottom: 0; }
 .ai-msg-content h1,.ai-msg-content h2,.ai-msg-content h3 {
@@ -1574,6 +1578,7 @@ html, body, #app { height: 100%; overflow: hidden; background: var(--bg1); color
 .ai-code-block {
   margin: 10px 0; border: 1px solid var(--bg4);
   border-radius: var(--r); overflow: hidden; background: var(--bg0);
+  min-width: 0; max-width: 100%;
 }
 .ai-code-header {
   display: flex; align-items: center; justify-content: space-between;
