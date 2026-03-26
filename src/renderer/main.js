@@ -327,6 +327,18 @@ document.addEventListener('keydown', async (e) => {
 const resizeSidebar = document.getElementById('resize-sidebar')
 let resizingSidebar = false, startXSidebar = 0, startWSidebar = 0
 
+function resetGlobalInteractionState() {
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+}
+
+function stopAllResizing() {
+  resizingSidebar = false
+  resizingAI = false
+  resizingTerminal = false
+  resetGlobalInteractionState()
+}
+
 resizeSidebar.addEventListener('mousedown', (e) => {
   resizingSidebar = true
   startXSidebar   = e.clientX
@@ -344,9 +356,7 @@ document.addEventListener('mousemove', (e) => {
 
 document.addEventListener('mouseup', () => {
   if (!resizingSidebar) return
-  resizingSidebar = false
-  document.body.style.cursor    = ''
-  document.body.style.userSelect = ''
+  stopAllResizing()
 })
 
 // ── Resize handle del panel IA ────────────────────────────────────────────────
@@ -370,9 +380,7 @@ document.addEventListener('mousemove', (e) => {
 
 document.addEventListener('mouseup', () => {
   if (!resizingAI) return
-  resizingAI = false
-  document.body.style.cursor    = ''
-  document.body.style.userSelect = ''
+  stopAllResizing()
 })
 
 // ── Resize handle de la terminal ─────────────────────────────────────────────────
@@ -397,9 +405,27 @@ document.addEventListener('mousemove', (e) => {
 
 document.addEventListener('mouseup', () => {
   if (!resizingTerminal) return
-  resizingTerminal = false
-  document.body.style.cursor    = ''
-  document.body.style.userSelect = ''
+  stopAllResizing()
+})
+
+// Si se pierde el foco de la ventana o cambia visibilidad durante un resize,
+// el mouseup puede no dispararse y dejar el UI en un estado roto.
+window.addEventListener('blur', () => {
+  if (resizingSidebar || resizingAI || resizingTerminal) stopAllResizing()
+  else resetGlobalInteractionState()
+})
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopAllResizing()
+})
+
+// Escape: recuperar foco al editor cuando el foco se haya quedado en body/html.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return
+  const ae = document.activeElement
+  if (ae === document.body || ae === document.documentElement || !ae) {
+    if (state.editorInstance) state.editorInstance.focus()
+  }
 })
 
 // ── Persistir settings ────────────────────────────────────────────────────────
