@@ -70,12 +70,14 @@ contextBridge.exposeInMainWorld('api', {
   agentWriteFile:           (p, c)      => ipcRenderer.invoke('agent:writeFile', p, c),
   agentCreateFile:          (p, c)      => ipcRenderer.invoke('agent:createFile', p, c),
   agentDeleteFile:          (p)         => ipcRenderer.invoke('agent:deleteFile', p),
+  agentDeleteDirectory:     (p)         => ipcRenderer.invoke('agent:deleteDirectory', p),
   agentListFiles:           (p)         => ipcRenderer.invoke('agent:listFiles', p),
   agentSearch:              (q, d)      => ipcRenderer.invoke('agent:searchInFiles', q, d),
   agentCreateDir:           (p)         => ipcRenderer.invoke('agent:createDir', p),
   agentMoveFile:            (src, dest) => ipcRenderer.invoke('agent:moveFile', src, dest),
   agentRunCommand:          (cmd, cwd)  => ipcRenderer.invoke('agent:runCommand', cmd, cwd),
   agentGetProjectStructure: (p, depth)  => ipcRenderer.invoke('agent:getProjectStructure', p, depth),
+  agentApplyDiff:           (p, diff)   => ipcRenderer.invoke('agent:applyDiff', p, diff),
   
   // DeepSeek streaming
   aiStreamDeepSeek: (msgs, model, apiKey, reqId) => 

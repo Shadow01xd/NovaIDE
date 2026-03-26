@@ -3,6 +3,8 @@ const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron')
 const path = require('path')
 const fs   = require('fs')
 const os   = require('os')
+const { applyUnifiedDiff } = require('./tools/apply-diff')
+const { isCommandAllowed } = require('./security/command-whitelist')
 
 const VITE_DEV_URL = 'http://localhost:5173'
 async function isViteRunning() {
@@ -603,10 +605,23 @@ ipcMain.handle('agent:deleteFile', async (_, p) => {
   try {
     const stat = fs.statSync(p)
     if (stat.isDirectory()) {
-      fs.rmdirSync(p, { recursive: true })
+      fs.rmSync(p, { recursive: true, force: true })
     } else {
       fs.unlinkSync(p)
     }
+    return { success: true }
+  } catch (e) {
+    return { success: false, error: e.message }
+  }
+})
+
+ipcMain.handle('agent:deleteDirectory', async (_, p) => {
+  try {
+    const stat = fs.statSync(p)
+    if (!stat.isDirectory()) {
+      return { success: false, error: "La ruta no es un directorio. Usa delete_file." }
+    }
+    fs.rmSync(p, { recursive: true, force: true })
     return { success: true }
   } catch (e) {
     return { success: false, error: e.message }
@@ -686,9 +701,15 @@ ipcMain.handle('agent:moveFile', async (_, src, dest) => {
 })
 
 ipcMain.handle('agent:runCommand', async (_, command, cwd) => {
+  if (!isCommandAllowed(command)) {
+    return { success: false, error: `Comando no permitido: ${command.split(' ')[0]}. Por seguridad, solo se permiten comandos básicos de desarrollo.`, exitCode: 1 };
+  }
+
   return new Promise((resolve) => {
     const { exec } = require('child_process')
-    exec(command, { cwd: cwd || os.homedir(), timeout: 60000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout, stderr) => {
+    // Usamos cwd de forma segura
+    const rootDir = cwd || os.homedir();
+    exec(command, { cwd: rootDir, timeout: 60000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout, stderr) => {
       resolve({
         success: !err,
         stdout: (stdout || '').trim(),
@@ -713,6 +734,10 @@ ipcMain.handle('agent:getProjectStructure', async (_, rootPath, maxDepth = 4) =>
     } catch { return [] }
   }
   return { success: true, tree: buildTree(rootPath, 0) }
+})
+
+ipcMain.handle('agent:applyDiff', async (_, p, diffText) => {
+  return applyUnifiedDiff(p, diffText)
 })
 
 // ── Helper: streaming SSE desde main process ─────────────────────────────────
@@ -756,16 +781,25 @@ async function streamSSE(url, body, headers, reqId) {
   mainWin.webContents.send('ai:token', { token: '', done: true, reqId })
 }
 
-// ── DeepSeek API streaming ───────────────────────────────────────────────────
 ipcMain.handle('ai:streamDeepSeek', async (_, { messages, model, apiKey, reqId }) => {
   try {
+    const cleanKey = (apiKey || "").trim();
+    if (cleanKey.length < 15 && !cleanKey.startsWith('sk-')) {
+       throw new Error("La API Key de DeepSeek parece ser inválida o está incompleta. Asegúrate de copiar la clave real (sk-...) y no una versión enmascarada.");
+    }
+    // Forzamos modelo compatible si no está definido
+    const targetModel = (model && model.includes('deepseek')) ? model : 'deepseek-chat';
+    
+    console.log(`[ai:streamDeepSeek] Streaming with model: ${targetModel}, key: ****${cleanKey.slice(-4)}`);
+
     await streamSSE(
-      'https://api.deepseek.com/v1/chat/completions',
-      { model: model || 'deepseek-chat', messages, stream: true, temperature: 0.3, max_tokens: 8192 },
-      { 'Authorization': `Bearer ${apiKey}` },
+      'https://api.deepseek.com/chat/completions',
+      { model: targetModel, messages, stream: true, temperature: 0.3, max_tokens: 8192 },
+      { 'Authorization': `Bearer ${cleanKey}` },
       reqId
     )
   } catch (err) {
+    console.error('[ai:streamDeepSeek] Error:', err.message);
     mainWin.webContents.send('ai:token', { token: '', done: true, error: err.message, reqId })
   }
 })
@@ -773,13 +807,19 @@ ipcMain.handle('ai:streamDeepSeek', async (_, { messages, model, apiKey, reqId }
 // ── Groq API streaming ───────────────────────────────────────────────────────
 ipcMain.handle('ai:streamGroq', async (_, { messages, model, apiKey, reqId }) => {
   try {
+    const cleanKey = (apiKey || "").trim();
+    const targetModel = (model && (model.includes('llama') || model.includes('mixtral') || model.includes('gemma'))) ? model : 'llama-3.3-70b-versatile';
+
+    console.log(`[ai:streamGroq] Streaming with model: ${targetModel}, key: ****${cleanKey.slice(-4)}`);
+
     await streamSSE(
       'https://api.groq.com/openai/v1/chat/completions',
-      { model: model || 'meta-llama/llama-4-scout-17b-16e-instruct', messages, stream: true, temperature: 0.3, max_tokens: 8192 },
-      { 'Authorization': `Bearer ${apiKey}` },
+      { model: targetModel, messages, stream: true, temperature: 0.3, max_tokens: 8192 },
+      { 'Authorization': `Bearer ${cleanKey}` },
       reqId
     )
   } catch (err) {
+    console.error('[ai:streamGroq] Error:', err.message);
     mainWin.webContents.send('ai:token', { token: '', done: true, error: err.message, reqId })
   }
 })

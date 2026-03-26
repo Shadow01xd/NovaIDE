@@ -109,6 +109,45 @@ html, body, #app { height: 100%; overflow: hidden; background: var(--bg1); color
   border-right: 1px solid rgba(139, 92, 246, 0.1);
   border-bottom: 1px solid rgba(139, 92, 246, 0.1);
 }
+
+/* AI Diff Highlights */
+.ai-diff-line-added {
+  background-color: rgba(46, 160, 67, 0.15) !important;
+}
+.ai-diff-gutter-added {
+  background-color: #2ea043 !important;
+  width: 5px !important;
+  margin-left: 2px;
+}
+.ai-diff-line-removed {
+  background-color: rgba(248, 81, 73, 0.1) !important;
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+.ai-diff-gutter-removed {
+  background-color: #f85149 !important;
+  width: 5px !important;
+  margin-left: 2px;
+}
+
+/* AI Plan Progress */
+.ai-plan-progress {
+  padding: 10px;
+  background: var(--bg0);
+  border-bottom: 1px solid var(--bg4);
+  font-size: 11px;
+  color: var(--text1);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+}
+
+.ai-system-note {
+  font-size: 11px;
+  color: var(--accent);
+  text-align: center;
+  margin: 8px 0;
+  opacity: 0.8;
+}
 .ai-thought-header {
   font-weight: 700;
   font-size: 10px;
