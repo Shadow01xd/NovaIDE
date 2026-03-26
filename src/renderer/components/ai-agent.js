@@ -86,6 +86,8 @@ export class AIAgent {
     this.mode = localStorage.getItem("ide_agent_mode") || "simple"; // "simple" | "planner"
     this.lastToolCallsHash = null;
     this.repetitionCount = 0;
+    this.projectType = null; // Will be auto-detected
+    this._streamIteration = 0;
 
     this.conversations = this.loadConversations();
   }
@@ -99,6 +101,7 @@ export class AIAgent {
     this.attachEventListeners();
     this.loadModelList();
     this.loadSession(); // Restaurar sesión si existe
+    this.detectProjectType(); // Detectar tipo de proyecto
     this.setupInlineCompletions();
     return this;
   }
@@ -215,21 +218,32 @@ export class AIAgent {
   }
 
   renderWelcome() {
+    const projectName = this.state.currentFolder
+      ? this.state.currentFolder.split(/[\\/]/).pop()
+      : null;
+
     return `
       <div class="ai-welcome">
         <div class="ai-welcome-logo">✦</div>
         <h2 class="ai-welcome-title">Nova AI</h2>
-        <p class="ai-welcome-subtitle">Agente de programación con acceso completo al proyecto.<br>Crea, edita y ejecuta archivos automáticamente.</p>
+        <p class="ai-welcome-subtitle">
+          ${projectName
+            ? `Proyecto: <strong>${escapeHtml(projectName)}</strong>${this.projectType ? ` · ${escapeHtml(this.projectType)}` : ""}`
+            : "Agente de programación con acceso completo al proyecto"}
+        </p>
         <div class="ai-suggestions">
-          <button class="ai-suggestion-btn" data-prompt="Crea una página web completa con HTML, CSS y JavaScript">Crear página web</button>
-          <button class="ai-suggestion-btn" data-prompt="Explica qué hace este archivo y cada función">Explicar archivo</button>
-          <button class="ai-suggestion-btn" data-prompt="Encuentra y corrige bugs en este código">Buscar y corregir bugs</button>
-          <button class="ai-suggestion-btn" data-prompt="Refactoriza este código para que sea más limpio">Refactorizar</button>
+          <button class="ai-suggestion-btn" data-prompt="Analiza la estructura del proyecto y explica cómo está organizado">Analizar proyecto</button>
+          <button class="ai-suggestion-btn" data-prompt="Revisa el archivo activo, encuentra bugs y corrígelos">Buscar y corregir bugs</button>
+          <button class="ai-suggestion-btn" data-prompt="Refactoriza el código del archivo activo para que sea más limpio, eficiente y siga buenas prácticas">Refactorizar código</button>
+          <button class="ai-suggestion-btn" data-prompt="Crea tests unitarios completos para el archivo activo">Generar tests</button>
+          <button class="ai-suggestion-btn" data-prompt="Explica en detalle qué hace este archivo y cada función importante">Explicar código</button>
+          <button class="ai-suggestion-btn" data-prompt="Optimiza el rendimiento del código del archivo activo">Optimizar rendimiento</button>
         </div>
         <div class="ai-shortcuts">
           <div class="ai-shortcut"><kbd>Ctrl+Enter</kbd> Enviar</div>
           <div class="ai-shortcut"><kbd>@</kbd> Adjuntar contexto</div>
           <div class="ai-shortcut"><kbd>Ctrl+L</kbd> Enviar selección</div>
+          <div class="ai-shortcut"><kbd>Esc</kbd> Detener agente</div>
         </div>
       </div>
     `;
@@ -608,7 +622,9 @@ export class AIAgent {
 
   buildSystemPrompt() {
     if (this.activeTab !== "agent") {
-      return `Eres un asistente de programación experto en nvcODE. Responde en español. Usa bloques de código con el lenguaje correcto.`;
+      return `Eres Nova AI, un asistente de programación experto integrado en NVCode IDE.
+Responde siempre en ESPAÑOL. Sé conciso, preciso y usa bloques de código con el lenguaje correcto.
+Si el usuario pide código, dalo listo para usar, sin omitir partes importantes.`;
     }
 
     if (this.mode === "planner") {
@@ -617,70 +633,149 @@ export class AIAgent {
 
     const folder = this.state.currentFolder || "(ninguna)";
     const file = this.state.currentFile || "(ninguno)";
+    const projectName = folder !== "(ninguna)" ? folder.split(/[\\/]/).pop() : null;
 
-    let prompt = `You are Nova AI, a world-class expert software engineer and coding assistant.
-You operate inside NVCode, a powerful Electron-based IDE.
-Your goal is to help the user with coding tasks, from simple bug fixes to creating entire projects.
+    // Detectar tipo de proyecto
+    let projectHint = "";
+    if (this.projectType) {
+      projectHint = `\nTipo de proyecto detectado: ${this.projectType}`;
+    }
 
-== CRITICAL PROTOCOL: THINK BEFORE ACTING ==
-Before every single response or tool call, you MUST analyze the situation and plan your steps inside a <thought> block in SPANISH.
-Format:
-<thought>
-1. Análisis: ¿Qué me ha pedido el usuario? ¿Qué archivos tengo abiertos?
-2. Descubrimiento: ¿Necesito leer algún archivo o ver la estructura del proyecto? (SIEMPRE lee antes de editar).
-3. Plan: ¿Qué pasos voy a seguir?
-4. Herramientas: ¿Qué herramienta voy a usar ahora?
-</thought>
-[Your tool call or final response here]
+    let prompt = `Eres Nova AI, el agente de ingeniería de software más avanzado del mundo, integrado en NVCode IDE.
+Tienes acceso completo al sistema de archivos, terminal y editor del usuario.
+Tu misión: completar cualquier tarea de programación con código de producción, limpio y sin errores.
 
-Rules:
-- RESPOND AND THINK IN SPANISH (Español).
-- **NON-NEGOTIABLE**: If you need to modify an existing file, you MUST use the \`apply_diff\` tool with a unified diff format. This is MUCH faster and safer than rewriting the whole file.
-- **FOR NEW FILES**: Use the \`write_file\` tool to create the initial content.
-- **FORBIDDEN: NO "create-react-app"**: Do NOT use \`npx create-react-app\`. It is too slow and fails often. Instead, use \`npm create vite@latest . -- --template react\` or create files manually (package.json, src/App.jsx, etc.).
-- **REASONING**: If a tool fails, DO NOT simply repeat it. Analyze the error message, check if the file exists using \`list_files\`, and adapt your plan.
-- NEVER assume a file exists; use \`list_files\` or \`get_project_structure\` to check existence without erroring. 
-- Avoid using \`read_file\` or \`open_file\` on files you suspect might not exist yet, as they will return an error and stop your workflow.
-- For WEB projects: Use modern React + Tailwind CSS.
-- Break down complex tasks into small, multiple tool calls. Use as many iterations as needed.
-- If a tool fails, read the error result and try an alternative approach in the next step.
+${projectName ? `Proyecto activo: **${projectName}**` : ""}${projectHint}
+Carpeta: ${folder}
+Archivo abierto: ${file}
 
-== TOOL FORMAT ==
-You can output tools in two ways:
-1. RAW JSON: {"tool":"name","params":{...}}
-2. MARKDOWN BLOCK:
+════════════════════════════════════════
+PROTOCOLO OBLIGATORIO — SIGUE ESTO SIEMPRE
+════════════════════════════════════════
+
+**PASO 0 — ANALIZA (pensamiento interno, NO lo muestres)**
+Antes de actuar, piensa internamente:
+- ¿Qué pide exactamente el usuario?
+- ¿Qué archivos necesito leer primero?
+- ¿Cuál es el plan de acción mínimo para completarlo?
+
+**PASO 1 — EXPLORAR ANTES DE EDITAR**
+NUNCA edites un archivo que no has leído en esta sesión.
+- Usa \`list_files\` para ver qué existe
+- Usa \`read_file\` para leer el contenido actual ANTES de modificar
+- Usa \`get_project_structure\` si necesitas el árbol completo
+
+**PASO 2 — EDITAR CON PRECISIÓN**
+- Para modificar archivos existentes: USA SIEMPRE \`apply_diff\` (es más seguro y rápido)
+- Para archivos nuevos: usa \`write_file\`
+- Si \`apply_diff\` falla, lee el archivo actualizado y reintenta con un diff correcto
+
+**PASO 3 — VERIFICAR**
+- Después de cambios importantes, usa \`get_diagnostics\` para verificar errores
+- Si hay errores, corrígelos en la misma sesión
+
+════════════════════════════════════════
+REGLAS DE CÓDIGO — OBLIGATORIAS
+════════════════════════════════════════
+
+1. **SIEMPRE leer antes de editar** — nunca asumas el contenido de un archivo
+2. **NUNCA usar create-react-app** — usa \`npm create vite@latest\` o crea archivos manualmente
+3. **Proyectos web modernos** — React + Tailwind CSS por defecto
+4. **TypeScript** — úsalo en proyectos nuevos si el proyecto ya lo usa
+5. **Manejo de errores** — incluye try/catch donde sea apropiado
+6. **NO dejes TODOs ni código incompleto** — entrega código funcional al 100%
+7. **Commits atómicos** — agrupa cambios relacionados
+8. **Si algo falla** — analiza el error, no repitas lo mismo. Busca causa raíz.
+9. **Máx. 15 iteraciones** por tarea — planifica eficientemente
+10. **Responde en ESPAÑOL** siempre, pero el código va en inglés
+
+════════════════════════════════════════
+FORMATO DE HERRAMIENTAS
+════════════════════════════════════════
+
+Formato 1 — JSON inline (preferido):
+{"tool":"nombre","params":{...}}
+
+Formato 2 — Bloque markdown:
 \`\`\`json
-{"tool":"name","params":{...}}
+{"tool":"nombre","params":{...}}
 \`\`\`
 
-== AVAILABLE TOOLS ==
-apply_diff          {"tool":"apply_diff","params":{"path":"src/App.jsx","diff":"unified diff content..."}}
-write_file          {"tool":"write_file","params":{"path":"src/App.jsx","content":"..."}} (Use only for NEW files)
-create_file         {"tool":"create_file","params":{"path":"README.md","content":"# My Project"}} (Alias of write_file)
-read_file           {"tool":"read_file","params":{"path":"package.json"}}
-list_files          {"tool":"list_files","params":{"directory":"src"}}
-get_project_structure {"tool":"get_project_structure","params":{}}
-run_command         {"tool":"run_command","params":{"command":"npm install"}}
-get_diagnostics     {"tool":"get_diagnostics","params":{}} -> Returns Linter/Editor errors.
-open_file           {"tool":"open_file","params":{"path":"index.html"}} -> Opens existing file.
-delete_file         {"tool":"delete_file","params":{"path":"old.js"}}
-search_in_files     {"tool":"search_in_files","params":{"query":"text"}}
-write_memory        {"tool":"write_memory","params":{"key":"user_pref","value":"..."}}
-read_memory         {"tool":"read_memory","params":{"key":"user_pref"}}`;
+Múltiples herramientas: una por línea o en bloque.
 
-    // Contexto del editor
+════════════════════════════════════════
+HERRAMIENTAS DISPONIBLES
+════════════════════════════════════════
+
+📖 LECTURA:
+  read_file            {"tool":"read_file","params":{"path":"src/App.jsx"}}
+  read_multiple_files  {"tool":"read_multiple_files","params":{"paths":["a.js","b.js"]}}
+  list_files           {"tool":"list_files","params":{"directory":"src"}}
+  get_project_structure {"tool":"get_project_structure","params":{}}
+  search_in_files      {"tool":"search_in_files","params":{"query":"useState","directory":"src"}}
+  get_open_file        {"tool":"get_open_file","params":{}}
+  get_diagnostics      {"tool":"get_diagnostics","params":{}}
+  read_memory          {"tool":"read_memory","params":{"key":"clave"}}
+
+✏️ ESCRITURA:
+  apply_diff           {"tool":"apply_diff","params":{"path":"src/App.jsx","diff":"--- a/src/App.jsx\\n+++ b/src/App.jsx\\n@@ -1,3 +1,4 @@\\n context\\n-old line\\n+new line"}}
+  write_file           {"tool":"write_file","params":{"path":"nuevo.js","content":"..."}}  ← Solo para archivos NUEVOS
+  create_file          {"tool":"create_file","params":{"path":"README.md","content":"..."}}
+  append_to_file       {"tool":"append_to_file","params":{"path":"log.txt","content":"nueva línea"}}
+  delete_file          {"tool":"delete_file","params":{"path":"viejo.js"}}
+  move_file            {"tool":"move_file","params":{"source":"old.js","destination":"new.js"}}
+  create_directory     {"tool":"create_directory","params":{"path":"src/components"}}
+  delete_directory     {"tool":"delete_directory","params":{"path":"carpeta"}}
+  write_memory         {"tool":"write_memory","params":{"key":"preferencia","value":"..."}}
+
+🔧 ACCIONES:
+  run_command          {"tool":"run_command","params":{"command":"npm install","cwd":"."}}
+  open_file            {"tool":"open_file","params":{"path":"index.html"}}
+  insert_at_cursor     {"tool":"insert_at_cursor","params":{"text":"código"}}
+  replace_selection    {"tool":"replace_selection","params":{"text":"nuevo código"}}
+
+════════════════════════════════════════
+GUÍA DE apply_diff — MUY IMPORTANTE
+════════════════════════════════════════
+
+El formato unified diff DEBE seguir este patrón exacto:
+\`\`\`
+--- a/ruta/archivo.js
++++ b/ruta/archivo.js
+@@ -LINEA_INICIO,LINEAS_CONTEXTO +LINEA_NUEVA,LINEAS_NUEVA @@
+ línea de contexto (sin cambios, empieza con espacio)
+-línea eliminada (empieza con -)
++línea añadida (empieza con +)
+ más contexto
+\`\`\`
+
+REGLAS del diff:
+- Incluye siempre 3 líneas de contexto antes y después del cambio
+- Los números de línea deben ser EXACTOS (usa read_file para verificar)
+- Si el diff falla, lee el archivo de nuevo y calcula las líneas correctas
+- Para cambios grandes (>50 líneas), usa write_file en su lugar`;
+
+    // Contexto del editor activo
     const editor = this.state.editorInstance;
     if (editor && file && file !== "(ninguno)") {
       const content = editor.getValue();
       const lang = file.split(".").pop() || "text";
-      const sel =
-        editor.getModel()?.getValueInRange(editor.getSelection()) || "";
-      prompt += `\n\n== ARCHIVO ACTIVO ==\nPath: ${file}\nLenguaje: ${lang}`;
-      if (sel.trim()) prompt += `\nSelección:\n\`\`\`${lang}\n${sel}\n\`\`\``;
-      if (content.length < 5000)
-        prompt += `\nContenido:\n\`\`\`${lang}\n${content}\n\`\`\``;
-      else
-        prompt += `\n(Archivo grande — usa read_file si necesitas verlo completo)`;
+      const sel = editor.getModel()?.getValueInRange(editor.getSelection()) || "";
+      const lineCount = content.split('\n').length;
+
+      prompt += `\n\n════════════════════════════════════════\nARCHIVO ACTIVO EN EL EDITOR\n════════════════════════════════════════`;
+      prompt += `\nPath: ${file}`;
+      prompt += `\nLenguaje: ${lang} | Líneas: ${lineCount}`;
+
+      if (sel.trim()) {
+        prompt += `\n\nSELECCIÓN DEL USUARIO:\n\`\`\`${lang}\n${sel.slice(0, 3000)}\n\`\`\``;
+      }
+
+      if (content.length < 6000) {
+        prompt += `\n\nCONTENIDO COMPLETO:\n\`\`\`${lang}\n${content}\n\`\`\``;
+      } else {
+        prompt += `\n\n(Archivo grande: ${lineCount} líneas — usa read_file para verlo completo o usa get_open_file)`;
+      }
     }
 
     return prompt;
@@ -689,24 +784,63 @@ read_memory         {"tool":"read_memory","params":{"key":"user_pref"}}`;
   buildPlannerPrompt() {
     const folder = this.state.currentFolder || "(ninguna)";
     const file = this.state.currentFile || "(ninguno)";
+    const projectName = folder !== "(ninguna)" ? folder.split(/[\\/]/).pop() : null;
 
-    return `You are the Planner Agent for NVCode.
-Your job is to break down complex tasks into a multi-step plan.
-Each step should be clear and actionable.
+    return `Eres Nova Planner, el agente de planificación de NVCode.
+Eres experto en descomponer tareas complejas en pasos ejecutables.
+${projectName ? `Proyecto: **${projectName}** | ` : ""}Carpeta: ${folder}
 
-== PROTOCOLO DE PLANIFICACIÓN ==
-1. Analiza el requerimiento del usuario.
-2. Crea un plan detallado con fases (Fase 1, Fase 2, etc.).
-3. Para cada fase, indica qué archivos se verán afectados.
-4. Muestra el estado del plan al inicio de cada respuesta usando este formato:
-   PLAN:
-   - [ ] Fase 1: ...
-   - [ ] Fase 2: ...
+════════════════════════════════════════
+PROTOCOLO DE PLANIFICACIÓN
+════════════════════════════════════════
 
-5. Una vez definido el plan, comienza ejecutando la primera fase tú mismo o indicando los pasos.
-6. Actualiza el estado del plan (cambia [ ] por [x]) conforme avances.
+1. **Analiza** el requerimiento completamente
+2. **Crea un plan** con fases numeradas y archivos afectados
+3. **Ejecuta fase por fase** usando las herramientas disponibles
+4. **Actualiza el estado** del plan con cada avance
 
-Responde siempre en ESPAÑOL. Tienes acceso a todas las herramientas.`;
+Formato del plan:
+📋 PLAN DE EJECUCIÓN:
+├── ✅ Fase 1: [completada]
+├── 🔄 Fase 2: [en progreso]
+├── ⏳ Fase 3: [pendiente]
+└── ⏳ Fase 4: [pendiente]
+
+Tienes acceso a todas las herramientas del agente.
+Responde SIEMPRE en ESPAÑOL. El código va en inglés.
+Sé metódico, verifica cada paso antes de avanzar.`;
+  }
+
+  async detectProjectType() {
+    if (!this.state.currentFolder || this.projectType) return;
+    try {
+      const r = await window.api.agentReadFile(
+        this.state.currentFolder + "/package.json"
+      );
+      if (r.success) {
+        const pkg = JSON.parse(r.content);
+        const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+        if (deps.react) this.projectType = "React";
+        else if (deps.vue) this.projectType = "Vue";
+        else if (deps.svelte) this.projectType = "Svelte";
+        else if (deps.next) this.projectType = "Next.js";
+        else if (deps.nuxt) this.projectType = "Nuxt";
+        else if (deps.express || deps.fastify || deps.koa) this.projectType = "Node.js Backend";
+        else this.projectType = "Node.js";
+      }
+    } catch {
+      // Not a Node project or no package.json
+      try {
+        const r = await window.api.agentListFiles(this.state.currentFolder);
+        if (r.success) {
+          const names = r.files.map(f => f.name);
+          if (names.includes("requirements.txt") || names.includes("setup.py")) this.projectType = "Python";
+          else if (names.includes("Cargo.toml")) this.projectType = "Rust";
+          else if (names.includes("go.mod")) this.projectType = "Go";
+          else if (names.includes("pom.xml") || names.includes("build.gradle")) this.projectType = "Java";
+        }
+      } catch {}
+    }
   }
 
   buildUserMessage(text) {
@@ -737,16 +871,25 @@ Responde siempre en ESPAÑOL. Tienes acceso a todas las herramientas.`;
       .join("\n");
   }
 
-  buildConversationWindow(limit = 24) {
-    return this.messages.slice(-limit).map((msg) => {
-      const content =
-        typeof msg.content === "string"
-          ? msg.content
-          : JSON.stringify(msg.content);
-      return {
-        ...msg,
-        content: content.length > 12000 ? content.slice(-12000) : content,
-      };
+  buildConversationWindow(limit = 30) {
+    // Keep all messages but truncate very long ones
+    const msgs = this.messages.slice(-limit);
+    return msgs.map((msg) => {
+      let content = typeof msg.content === "string"
+        ? msg.content
+        : JSON.stringify(msg.content);
+
+      // Truncate extremely long tool results (file contents)
+      if (msg.role === "user" && content.startsWith("[Resultado de") && content.length > 15000) {
+        content = content.slice(0, 15000) + "\n...[truncado por longitud]";
+      }
+
+      // Truncate very long assistant messages (e.g., large file writes)
+      if (msg.role === "assistant" && content.length > 20000) {
+        content = content.slice(-20000);
+      }
+
+      return { ...msg, content };
     });
   }
 
@@ -787,6 +930,9 @@ Responde siempre en ESPAÑOL. Tienes acceso a todas las herramientas.`;
       this._currentCheckpointId = null; // Resetear para esta vuelta del usuario
       this.updateUIState();
     }
+
+    this._streamIteration = iteration;
+    this.updateUIState();
 
     // Advanced Context Management: Summarization if > 80% limit
     const TOKEN_LIMIT = 32000;
@@ -847,7 +993,7 @@ Responde siempre en ESPAÑOL. Tienes acceso a todas las herramientas.`;
         this.activeTab === "agent" ? this.parseToolCalls(fullResponse) : [];
 
       // Finalizar mensaje
-      const visibleText = this.stripToolCalls(fullResponse);
+      const visibleText = this.stripThoughts(this.stripToolCalls(fullResponse));
       latestRendered = visibleText;
       this.finalizeMessage(
         msgEl,
@@ -1128,10 +1274,11 @@ Responde siempre en ESPAÑOL. Tienes acceso a todas las herramientas.`;
     if (!text) return "";
     const trimmed = text.trimStart();
     if (trimmed.startsWith("{")) return ""; // Pure tool call — no mostrar nada
-    const jsonStart = text.search(/\n?\s*\{"tool"/);
-    if (jsonStart > 0)
-      return this.stripToolCalls(text.slice(0, jsonStart)).trim();
-    return this.stripToolCalls(text);
+    // Hide thought blocks while streaming
+    const noThoughts = text.replace(/<thought>[\s\S]*?<\/thought>/gi, "").replace(/<thought>[\s\S]*/i, "");
+    const jsonStart = noThoughts.search(/\n?\s*\{"tool"/);
+    if (jsonStart > 0) return this.stripToolCalls(noThoughts.slice(0, jsonStart)).trim();
+    return this.stripToolCalls(noThoughts);
   }
 
   // Elimina todos los tool-call JSON del texto final (stack-based)
@@ -1189,6 +1336,12 @@ Responde siempre en ESPAÑOL. Tienes acceso a todas las herramientas.`;
       result += text[i++];
     }
     return result.replace(/\n{3,}/g, "\n\n").trim();
+  }
+
+  stripThoughts(text) {
+    if (!text) return "";
+    // Strip <thought>...</thought> blocks (internal agent reasoning)
+    return text.replace(/<thought>[\s\S]*?<\/thought>/gi, "").replace(/\n{3,}/g, "\n\n").trim();
   }
 
   // ==========================================================================
@@ -1334,6 +1487,8 @@ Responde siempre en ESPAÑOL. Tienes acceso a todas las herramientas.`;
   describeAction(tool, params) {
     const map = {
       read_file: `Leer ${params.path}`,
+      read_multiple_files: `Leer ${(params.paths || []).length} archivos`,
+      append_to_file: `Agregar contenido a ${params.path}`,
       apply_diff: `Aplicar cambios en ${params.path}`,
       delete_directory: `Eliminar carpeta ${params.path}`,
       write_file: `Escribir ${params.path}`,
@@ -1402,7 +1557,7 @@ Responde siempre en ESPAÑOL. Tienes acceso a todas las herramientas.`;
       return base.replace(/[/\\]+$/, "") + sep + p.replace(/^[/\\]+/, "");
     };
 
-    const allowedTools = ["read_file","write_file","create_file","delete_file","delete_directory","create_directory","move_file","list_files","get_project_structure","search_in_files","run_command","get_open_file","open_file","insert_at_cursor","replace_selection","get_diagnostics","write_memory","read_memory","apply_diff"];
+    const allowedTools = ["read_file","read_multiple_files","write_file","create_file","append_to_file","delete_file","delete_directory","create_directory","move_file","list_files","get_project_structure","search_in_files","run_command","get_open_file","open_file","insert_at_cursor","replace_selection","get_diagnostics","write_memory","read_memory","apply_diff"];
     if (!allowedTools.includes(tool)) {
       return `ERROR: La herramienta "${tool}" no existe. Por favor, usa SOLO una de las herramientas permitidas: ${allowedTools.join(", ")}.`;
     }
@@ -1417,6 +1572,27 @@ Responde siempre en ESPAÑOL. Tienes acceso a todas las herramientas.`;
         const r = await window.api.agentReadFile(fp);
         if (!r.success) throw new Error(r.error);
         return r.content;
+      }
+
+      case "read_multiple_files": {
+        const paths = Array.isArray(params.paths) ? params.paths : [];
+        const results = [];
+        for (const p of paths.slice(0, 10)) { // max 10 files
+          const fp = resolve(p);
+          try {
+            this.ensureWorkspacePath(fp, "");
+            const r = await window.api.agentReadFile(fp);
+            if (r.success) {
+              const lines = r.content.split('\n').length;
+              results.push(`\n📄 **${p}** (${lines} líneas):\n\`\`\`\n${r.content.slice(0, 8000)}\n\`\`\``);
+            } else {
+              results.push(`\n❌ **${p}**: ${r.error}`);
+            }
+          } catch (e) {
+            results.push(`\n❌ **${p}**: ${e.message}`);
+          }
+        }
+        return results.join("\n\n---") || "Sin resultados.";
       }
 
       case "write_file": {
@@ -1647,19 +1823,40 @@ Responde siempre en ESPAÑOL. Tienes acceso a todas las herramientas.`;
         return r.content;
       }
 
+      case "append_to_file": {
+        const fp = resolve(params.path);
+        this.ensureWorkspacePath(fp, "No se puede escribir fuera de la carpeta abierta.");
+        // Read existing content first
+        const existing = await window.api.agentReadFile(fp);
+        const current = existing.success ? (existing.content || "") : "";
+        const newContent = current + (current && !current.endsWith("\n") ? "\n" : "") + (params.content || "");
+        const r = await window.api.agentWriteFile(fp, newContent);
+        if (!r.success) throw new Error(r.error);
+        this.syncEditorIfOpen(fp, newContent);
+        this.state.emit("refreshTree");
+        return `Contenido agregado a: ${fp}`;
+      }
+
       case "apply_diff": {
         const fp = resolve(params.path);
         this.ensureWorkspacePath(fp, "No se puede editar fuera de la carpeta abierta.");
         const r = await window.api.agentApplyDiff(fp, params.diff);
-        if (!r.success) throw new Error(r.error);
+        if (!r.success) {
+          // Auto-fallback: provide detailed error + current file content for retry
+          const current = await window.api.agentReadFile(fp);
+          const fileInfo = current.success
+            ? `\nContenido actual del archivo (${current.content.split('\n').length} líneas):\n\`\`\`\n${current.content.slice(0, 6000)}\n\`\`\``
+            : "";
+          throw new Error(`apply_diff falló: ${r.error}${fileInfo}\n\n→ Usa write_file con el contenido completo corregido, o corrige el diff.`);
+        }
         this.syncEditorIfOpen(fp, r.content);
-        this.highlightDiff(fp, params.diff); // Resaltar cambios en Monaco
+        this.highlightDiff(fp, params.diff);
         return `Cambios aplicados con éxito en: ${fp}`;
       }
 
       default:
         throw new Error(
-          `Herramienta desconocida: "${tool}". Usa una de: read_file, apply_diff, write_file, create_file, create_directory, delete_file, move_file, list_files, get_project_structure, search_in_files, run_command, get_diagnostics, get_open_file, open_file, insert_at_cursor, replace_selection`,
+          `Herramienta desconocida: "${tool}". Disponibles: read_file, read_multiple_files, apply_diff, write_file, create_file, append_to_file, create_directory, delete_file, move_file, list_files, get_project_structure, search_in_files, run_command, get_diagnostics, get_open_file, open_file, insert_at_cursor, replace_selection, write_memory, read_memory`,
         );
     }
   }
@@ -2063,6 +2260,9 @@ Responde siempre en ESPAÑOL. Tienes acceso a todas las herramientas.`;
     this.messages = [];
     this.activeConversation = null;
     this.pendingContext = null;
+    this.processedEarlyCalls = null;
+    this.lastToolCallsHash = null;
+    this.repetitionCount = 0;
     this.container.querySelector("#ai-messages").innerHTML =
       this.renderWelcome();
     this.updateContextDisplay();
@@ -2121,7 +2321,11 @@ Responde siempre en ESPAÑOL. Tienes acceso a todas las herramientas.`;
     if (this.isStreaming) {
       sendBtn.style.display = "none";
       stopBtn.style.display = "flex";
-      status.innerHTML = `<span class="ai-status-dot"></span>${this.activeTab === "agent" ? "Agente trabajando..." : "Generando..."}`;
+      const iter = this._streamIteration || 0;
+      const iterText = iter > 0 ? ` (paso ${iter}/15)` : "";
+      status.innerHTML = `<span class="ai-status-dot"></span>${
+        this.activeTab === "agent" ? `Agente trabajando${iterText}...` : "Generando..."
+      }`;
     } else {
       sendBtn.style.display = "flex";
       stopBtn.style.display = "none";
