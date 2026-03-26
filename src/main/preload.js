@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('api', {
   // File system
   openFolder:    ()        => ipcRenderer.invoke('dialog:openFolder'),
   saveAs:        (p)       => ipcRenderer.invoke('dialog:saveAs', p),
+  confirmDialog: (msg, detail) => ipcRenderer.invoke('dialog:confirm', msg, detail),
   readDir:       (p)       => ipcRenderer.invoke('fs:readDir', p),
   readDirSub:    (p)       => ipcRenderer.invoke('fs:readDirSub', p),
   readFile:      (p)       => ipcRenderer.invoke('fs:readFile', p),

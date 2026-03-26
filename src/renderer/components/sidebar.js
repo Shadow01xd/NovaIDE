@@ -296,7 +296,8 @@ export function createSidebar(container, state) {
   }
 
   async function deleteItem(entry) {
-    if (!confirm(`¿Eliminar "${basename(entry.path)}"?`)) return
+    const ok = await window.api.confirmDialog(`¿Eliminar "${basename(entry.path)}"?`, entry.path)
+    if (!ok) return
     if (state.currentFile === entry.path) state.closeTab(entry.path)
     await window.api.deleteFile(entry.path)
     if (state.currentFolder) renderTree(state.currentFolder)

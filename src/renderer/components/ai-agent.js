@@ -1604,6 +1604,17 @@ HERRAMIENTAS DISPONIBLES
     }
     // ─────────────────────────────────────────────────────────────────────────
 
+    // ── Capturar contenido previo para diff (write/create/apply_diff) ────────
+    const DIFF_TOOLS = new Set(["write_file", "create_file", "apply_diff", "append_to_file"]);
+    let oldContent = null;
+    if (DIFF_TOOLS.has(tool) && params.path) {
+      try {
+        const r = await window.api.agentReadFile(this.resolvePath(params.path));
+        oldContent = r?.success ? (r.content ?? "") : null;
+      } catch {}
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     try {
       const result = await this.executeTool(tool, params);
       const summary =
@@ -1615,6 +1626,27 @@ HERRAMIENTAS DISPONIBLES
         role: "user",
         content: `[Resultado de "${tool}"]\n${typeof result === "string" ? result : JSON.stringify(result, null, 2)}`,
       });
+
+      // ── Mostrar diff inline en el paso + editor ───────────────────────────
+      if (DIFF_TOOLS.has(tool) && params.path) {
+        const fp = this.resolvePath(params.path);
+        let newContent;
+        if (tool === "apply_diff") {
+          if (stepEl) this.renderParsedDiff(stepEl, params.diff || "", params.path);
+          try {
+            const r = await window.api.agentReadFile(fp);
+            newContent = r?.success ? (r.content ?? "") : (params.content ?? "");
+          } catch { newContent = ""; }
+        } else {
+          newContent = tool === "append_to_file"
+            ? (oldContent ?? "") + "\n" + (params.content ?? "")
+            : (params.content ?? "");
+          if (stepEl) this.renderFileDiff(stepEl, oldContent ?? "", newContent, params.path);
+        }
+        this.showEditorDiff(fp, oldContent ?? "", newContent);
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
       return true;
     } catch (err) {
       this.addToolStep(msgEl, "error", tool, err.message);
@@ -1624,6 +1656,82 @@ HERRAMIENTAS DISPONIBLES
       });
       return false;
     }
+  }
+
+  /** Genera un diff visual simple entre oldContent y newContent */
+  renderFileDiff(stepEl, oldContent, newContent, filePath) {
+    const oldLines = oldContent.split("\n");
+    const newLines = newContent.split("\n");
+    const filename = (filePath || "").split(/[/\\]/).pop();
+    const MAX = 18;
+
+    // Calcular líneas añadidas/eliminadas (comparación posicional simple)
+    const rows = [];
+    const maxLen = Math.max(oldLines.length, newLines.length);
+    let added = 0, removed = 0;
+
+    for (let i = 0; i < maxLen; i++) {
+      const o = oldLines[i], n = newLines[i];
+      if (o === undefined) {
+        rows.push({ type: "add", text: n }); added++;
+      } else if (n === undefined) {
+        rows.push({ type: "del", text: o }); removed++;
+      } else if (o !== n) {
+        rows.push({ type: "del", text: o }); removed++;
+        rows.push({ type: "add", text: n }); added++;
+      }
+    }
+
+    if (!rows.length) return; // sin cambios
+
+    const shown = rows.slice(0, MAX);
+    const extra = rows.length - shown.length;
+
+    const html = shown.map(r =>
+      `<div class="ai-diff-line ai-diff-line--${r.type}">${
+        r.type === "add" ? "+" : "−"
+      } ${escapeHtml(r.text)}</div>`
+    ).join("") +
+      (extra > 0 ? `<div class="ai-diff-more">… ${extra} líneas más</div>` : "") +
+      `<div class="ai-diff-stats"><span class="ai-diff-stat-add">+${added}</span> <span class="ai-diff-stat-del">−${removed}</span></div>`;
+
+    const el = document.createElement("div");
+    el.className = "ai-file-diff";
+    el.innerHTML = `<div class="ai-file-diff-name">📄 ${escapeHtml(filename)}</div>${html}`;
+    stepEl.appendChild(el);
+    this.scrollToBottom();
+  }
+
+  /** Renderiza un diff unificado (apply_diff) directamente */
+  renderParsedDiff(stepEl, diffText, filePath) {
+    if (!diffText) return;
+    const filename = (filePath || "").split(/[/\\]/).pop();
+    const MAX = 18;
+    const lines = diffText.split("\n").filter(l =>
+      (l.startsWith("+") && !l.startsWith("+++")) ||
+      (l.startsWith("-") && !l.startsWith("---"))
+    );
+    if (!lines.length) return;
+
+    const shown = lines.slice(0, MAX);
+    const extra = lines.length - shown.length;
+    let added = 0, removed = 0;
+
+    const html = shown.map(l => {
+      const isAdd = l.startsWith("+");
+      if (isAdd) added++; else removed++;
+      return `<div class="ai-diff-line ai-diff-line--${isAdd ? "add" : "del"}">${
+        isAdd ? "+" : "−"
+      } ${escapeHtml(l.slice(1))}</div>`;
+    }).join("") +
+      (extra > 0 ? `<div class="ai-diff-more">… ${extra} líneas más</div>` : "") +
+      `<div class="ai-diff-stats"><span class="ai-diff-stat-add">+${added}</span> <span class="ai-diff-stat-del">−${removed}</span></div>`;
+
+    const el = document.createElement("div");
+    el.className = "ai-file-diff";
+    el.innerHTML = `<div class="ai-file-diff-name">📄 ${escapeHtml(filename)}</div>${html}`;
+    stepEl.appendChild(el);
+    this.scrollToBottom();
   }
 
   describeAction(tool, params) {
@@ -2641,6 +2749,243 @@ HERRAMIENTAS DISPONIBLES
       status.textContent = "";
       status.className = "ai-status";
     }, 3000);
+  }
+
+  // ==========================================================================
+  // EDITOR DIFF (Cursor-style inline diff with Accept / Reject)
+  // ==========================================================================
+
+  /** Entry point: opens file, applies decorations, shows Accept/Reject bar */
+  showEditorDiff(filePath, oldContent, newContent) {
+    this.state.openFile(filePath, newContent);
+    // 300ms: let Monaco finish setting the model and rendering before decorating
+    setTimeout(() => this._applyEditorDiffDecorations(filePath, oldContent, newContent), 300);
+  }
+
+  /**
+   * LCS-based line diff → [{type:'eq'|'add'|'del', text}]
+   * Capped at MAX lines to stay fast.
+   */
+  _computeLineDiff(oldLines, newLines) {
+    const MAX = 600;
+    const ol = oldLines.slice(0, MAX);
+    const nl = newLines.slice(0, MAX);
+    const m = ol.length, n = nl.length;
+
+    // Build DP table (backward)
+    const dp = [];
+    for (let i = 0; i <= m; i++) dp[i] = new Int32Array(n + 1);
+    for (let i = m - 1; i >= 0; i--) {
+      for (let j = n - 1; j >= 0; j--) {
+        dp[i][j] = ol[i] === nl[j]
+          ? dp[i+1][j+1] + 1
+          : Math.max(dp[i+1][j], dp[i][j+1]);
+      }
+    }
+
+    const ops = [];
+    let i = 0, j = 0;
+    while (i < m && j < n) {
+      if (ol[i] === nl[j]) {
+        ops.push({ type: "eq",  text: nl[j] }); i++; j++;
+      } else if (dp[i+1][j] >= dp[i][j+1]) {
+        ops.push({ type: "del", text: ol[i] }); i++;
+      } else {
+        ops.push({ type: "add", text: nl[j] }); j++;
+      }
+    }
+    while (i < m) ops.push({ type: "del", text: ol[i++] });
+    while (j < n) ops.push({ type: "add", text: nl[j++] });
+    // Lines beyond MAX treated as additions
+    for (let k = MAX; k < newLines.length; k++) ops.push({ type: "add", text: newLines[k] });
+    return ops;
+  }
+
+  _applyEditorDiffDecorations(filePath, oldContent, newContent) {
+    const editor = this.state.editorInstance;
+    if (!editor) return;
+    // Normalize slashes for cross-platform path comparison
+    const norm = p => (p || "").replace(/\\/g, "/").toLowerCase();
+    if (norm(this.state.currentFile) !== norm(filePath)) return;
+    const model = editor.getModel();
+    if (!model) return;
+
+    const oldLines = oldContent === "" ? [] : oldContent.split("\n");
+    const newLines = newContent === "" ? [] : newContent.split("\n");
+    const ops = this._computeLineDiff(oldLines, newLines);
+
+    const decorations = [];
+    // Each entry: { afterLine (0=before line 1), texts[] }
+    const delZones = [];
+
+    let newLine = 0;      // 1-based current position in new content
+    let pendingDels = [];
+
+    const flushDels = () => {
+      if (pendingDels.length) {
+        delZones.push({ afterLine: newLine, texts: [...pendingDels] });
+        pendingDels = [];
+      }
+    };
+
+    for (const op of ops) {
+      if (op.type === "del") {
+        pendingDels.push(op.text);
+      } else if (op.type === "eq") {
+        flushDels();
+        newLine++;
+      } else { // add
+        flushDels();
+        newLine++;
+        decorations.push({
+          range: new window.monaco.Range(newLine, 1, newLine, 1),
+          options: {
+            isWholeLine: true,
+            className: "editor-diff-line-add",
+            glyphMarginClassName: "editor-diff-glyph-add",
+          },
+        });
+      }
+    }
+    flushDels(); // trailing deletions
+
+    // Apply line decorations
+    if (this._editorDiffDecos) {
+      this._editorDiffDecos = editor.deltaDecorations(this._editorDiffDecos, decorations);
+    } else {
+      this._editorDiffDecos = editor.deltaDecorations([], decorations);
+    }
+
+    // Apply view zones for deleted lines (red ghost lines)
+    this._applyDiffZones(editor, delZones);
+
+    // Count real adds/dels for the bar stats
+    let added = 0, removed = 0;
+    for (const op of ops) {
+      if (op.type === "add") added++;
+      else if (op.type === "del") removed++;
+    }
+    this._showDiffBar(filePath, oldContent, added, removed);
+  }
+
+  _applyDiffZones(editor, delZones) {
+    // Remove old zones
+    if (this._editorDiffZones && this._editorDiffZones.length) {
+      editor.changeViewZones(acc => {
+        this._editorDiffZones.forEach(id => acc.removeZone(id));
+      });
+    }
+    this._editorDiffZones = [];
+    if (!delZones.length) return;
+
+    // Safe fallbacks — EditorOption enum keys may not survive minification
+    let contentLeft = 60, lineHeight = 19, fontSize = 13;
+    let fontFamily = "Menlo, Monaco, Consolas, 'Courier New', monospace";
+    try { contentLeft = editor.getLayoutInfo().contentLeft || 60; } catch {}
+    try {
+      const EO = window.monaco?.editor?.EditorOption;
+      if (EO) {
+        const lh = editor.getOption(EO.lineHeight); if (lh > 0) lineHeight = lh;
+        const fs = editor.getOption(EO.fontSize);   if (fs > 0) fontSize   = fs;
+        const ff = editor.getOption(EO.fontFamily); if (ff)     fontFamily = ff;
+      }
+    } catch {}
+
+    editor.changeViewZones(acc => {
+      for (const { afterLine, texts } of delZones) {
+        for (const text of texts) {
+          // Content area node (the red line)
+          const domNode = document.createElement("div");
+          domNode.className = "editor-diff-del-zone";
+          domNode.style.height        = lineHeight + "px";
+          domNode.style.lineHeight    = lineHeight + "px";
+          domNode.style.paddingLeft   = contentLeft + "px";
+          domNode.style.fontSize      = fontSize + "px";
+          domNode.style.fontFamily    = fontFamily;
+
+          const inner = document.createElement("span");
+          inner.className = "editor-diff-del-zone-text";
+          inner.textContent = text;
+          domNode.appendChild(inner);
+
+          // Gutter node (shows the − glyph)
+          const marginDom = document.createElement("div");
+          marginDom.className = "editor-diff-del-glyph";
+          marginDom.style.height     = lineHeight + "px";
+          marginDom.style.lineHeight = lineHeight + "px";
+
+          const zoneId = acc.addZone({
+            afterLineNumber: afterLine,
+            heightInLines: 1,
+            domNode,
+            marginDomNode: marginDom,
+          });
+          this._editorDiffZones.push(zoneId);
+        }
+      }
+    });
+  }
+
+  _showDiffBar(filePath, oldContent, added, removed) {
+    this._removeDiffBar();
+    const wrap = document.getElementById("editor-wrap");
+    if (!wrap) return;
+
+    const filename = filePath.split(/[/\\]/).pop();
+    const bar = document.createElement("div");
+    bar.className = "editor-diff-bar";
+    bar.innerHTML = `
+      <div class="editor-diff-bar-info">
+        <span class="editor-diff-bar-file">✦ ${escapeHtml(filename)}</span>
+        <span class="editor-diff-stat-add">+${added}</span>
+        <span class="editor-diff-stat-del">−${removed}</span>
+      </div>
+      <div class="editor-diff-bar-actions">
+        <button class="editor-diff-btn editor-diff-btn--accept">✓ Aceptar</button>
+        <button class="editor-diff-btn editor-diff-btn--reject">✕ Rechazar</button>
+      </div>
+    `;
+
+    bar.querySelector(".editor-diff-btn--accept").onclick = () => this._clearEditorDiff();
+
+    bar.querySelector(".editor-diff-btn--reject").onclick = async () => {
+      try {
+        await window.api.agentWriteFile(filePath, oldContent);
+        this.syncEditorIfOpen(filePath, oldContent);
+      } catch (e) {
+        console.error("Error al rechazar diff:", e);
+      }
+      this._clearEditorDiff();
+    };
+
+    wrap.appendChild(bar);
+    this._diffBar = bar;
+    this._diffBarFile = filePath;
+  }
+
+  _removeDiffBar() {
+    if (this._diffBar) {
+      this._diffBar.remove();
+      this._diffBar = null;
+      this._diffBarFile = null;
+    }
+  }
+
+  _clearEditorDiff() {
+    const editor = this.state.editorInstance;
+    if (editor) {
+      if (this._editorDiffDecos) {
+        this._editorDiffDecos = editor.deltaDecorations(this._editorDiffDecos, []);
+      }
+      if (this._editorDiffZones && this._editorDiffZones.length) {
+        editor.changeViewZones(acc => {
+          this._editorDiffZones.forEach(id => acc.removeZone(id));
+        });
+      }
+    }
+    this._editorDiffDecos = null;
+    this._editorDiffZones = [];
+    this._removeDiffBar();
   }
 
   highlightDiff(filePath, diffText) {

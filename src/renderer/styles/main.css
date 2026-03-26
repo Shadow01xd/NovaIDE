@@ -130,6 +130,110 @@ html, body, #app { height: 100%; overflow: hidden; background: var(--bg1); color
   margin-left: 2px;
 }
 
+/* ── Editor Diff (Cursor-style) ─────────────────────────────────────────── */
+/* Needs .monaco-editor prefix so it wins over Monaco's own overlay styles */
+.monaco-editor .editor-diff-line-add,
+.editor-diff-line-add {
+  background-color: rgba(46, 160, 67, 0.22) !important;
+  border-left: 3px solid #2ea043 !important;
+  width: 100% !important;
+}
+.editor-diff-glyph-add::before {
+  content: '+';
+  color: #2ea043;
+  font-size: 11px;
+  font-weight: 700;
+  margin-left: 2px;
+}
+
+/* Deleted ghost lines (view zones) */
+.editor-diff-del-zone {
+  background-color: rgba(248, 81, 73, 0.15) !important;
+  border-left: 3px solid #f85149;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  white-space: pre;
+  box-sizing: border-box;
+}
+.editor-diff-del-zone-text {
+  color: rgba(248, 81, 73, 0.95);
+  text-decoration: line-through;
+  text-decoration-color: rgba(248, 81, 73, 0.6);
+  text-decoration-thickness: 1px;
+}
+.editor-diff-del-glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  background-color: rgba(248, 81, 73, 0.18);
+}
+.editor-diff-del-glyph::before {
+  content: '−';
+  color: #f85149;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* Accept/Reject bar — positioned at the bottom of the editor wrap */
+.editor-diff-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  height: 36px;
+  background: rgba(10, 10, 10, 0.97);
+  border-top: 1px solid rgba(46, 160, 67, 0.45);
+  backdrop-filter: blur(6px);
+  gap: 10px;
+  animation: diffBarSlide .15s ease-out;
+}
+@keyframes diffBarSlide {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+.editor-diff-bar-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.editor-diff-bar-file {
+  color: var(--text1);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.editor-diff-bar .editor-diff-stat-add { color: #3fb950; font-size: 11px; font-weight: 600; }
+.editor-diff-bar .editor-diff-stat-del { color: #f85149; font-size: 11px; font-weight: 600; }
+.editor-diff-bar-actions { display: flex; gap: 6px; }
+.editor-diff-btn {
+  padding: 3px 12px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all .15s;
+}
+.editor-diff-btn--accept {
+  background: rgba(46, 160, 67, 0.18);
+  border-color: rgba(46, 160, 67, 0.5);
+  color: #3fb950;
+}
+.editor-diff-btn--accept:hover { background: rgba(46, 160, 67, 0.3); border-color: #3fb950; }
+.editor-diff-btn--reject {
+  background: rgba(248, 81, 73, 0.12);
+  border-color: rgba(248, 81, 73, 0.4);
+  color: #f85149;
+}
+.editor-diff-btn--reject:hover { background: rgba(248, 81, 73, 0.25); border-color: #f85149; }
+
 /* AI Plan Progress */
 .ai-plan-progress {
   padding: 10px;
@@ -1542,6 +1646,53 @@ html, body, #app { height: 100%; overflow: hidden; background: var(--bg1); color
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   font-family: var(--font-mono, monospace);
 }
+
+/* ── Inline file diff (Cursor-style) ──────────────────────── */
+.ai-file-diff {
+  margin-top: 6px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.07);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px; line-height: 1.5;
+  width: 100%;
+}
+.ai-file-diff-name {
+  padding: 3px 8px;
+  background: rgba(255,255,255,.05);
+  color: var(--text2);
+  font-size: 10.5px;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.ai-diff-line {
+  display: block;
+  padding: 0 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.ai-diff-line--add {
+  background: rgba(16,185,129,.18);
+  color: #6ee7b7;
+  border-left: 2px solid #10b981;
+}
+.ai-diff-line--del {
+  background: rgba(239,68,68,.15);
+  color: #fca5a5;
+  border-left: 2px solid #ef4444;
+}
+.ai-diff-more {
+  padding: 2px 8px;
+  font-size: 10px; opacity: .5; font-style: italic;
+  background: rgba(255,255,255,.03);
+}
+.ai-diff-stats {
+  padding: 3px 8px;
+  background: rgba(255,255,255,.04);
+  border-top: 1px solid rgba(255,255,255,.06);
+  font-size: 10.5px; font-weight: 600;
+}
+.ai-diff-stat-add { color: #34d399; }
+.ai-diff-stat-del { color: #f87171; }
 
 /* ── Live command preview ──────────────────────────────────── */
 .ai-cmd-preview {

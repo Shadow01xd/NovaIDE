@@ -86,6 +86,18 @@ ipcMain.handle('dialog:saveAs', async (_, defaultPath) => {
   return r.canceled ? null : r.filePath
 })
 
+// Confirmación nativa via Electron (no bloquea el foco del renderer como window.confirm)
+ipcMain.handle('dialog:confirm', async (_, message, detail) => {
+  const r = await dialog.showMessageBox(mainWin, {
+    type: 'warning',
+    buttons: ['Cancelar', 'Eliminar'],
+    defaultId: 0, cancelId: 0,
+    title: 'Confirmar eliminación',
+    message, detail: detail || '',
+  })
+  return r.response === 1 // true = Eliminar
+})
+
 function walkDir(dir, depth = 0) {
   try {
     const entries = fs.readdirSync(dir, { withFileTypes: true })

@@ -906,10 +906,9 @@ export class FileManager {
    */
   async deleteItem(item) {
     const itemName = item.name || item.path.split(/[/\\]/).pop()
-    
-    if (!confirm(`¿Eliminar "${itemName}"?`)) {
-      return
-    }
+
+    const ok = await window.api.confirmDialog(`¿Eliminar "${itemName}"?`, item.path)
+    if (!ok) return
     
     try {
       await window.api.deleteFile(item.path)
