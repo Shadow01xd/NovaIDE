@@ -1,7 +1,7 @@
 {
   "messages": [],
-  "mode": "simple",
-  "model": "deepseek-chat",
+  "mode": "planner",
+  "model": "deepseek-coder",
   "provider": "deepseek",
-  "date": "2026-03-26T16:04:25.164Z"
+  "date": "2026-03-26T19:24:47.267Z"
 }

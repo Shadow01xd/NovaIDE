@@ -10,6 +10,7 @@
 import { escapeHtml, renderMarkdown } from "../utils/markdown.js";
 import { estimateTokens } from "../utils/token-counter.js";
 import { MemoryManager } from "../utils/memory-manager.js";
+import { checkpointManager } from "../utils/checkpoint-manager.js";
 
 const generateId = () => Math.random().toString(36).substring(2, 11);
 
@@ -783,6 +784,7 @@ Responde siempre en ESPAÑOL. Tienes acceso a todas las herramientas.`;
     if (iteration === 0) {
       this.abortController = new AbortController();
       this.isStreaming = true;
+      this._currentCheckpointId = null; // Resetear para esta vuelta del usuario
       this.updateUIState();
     }
 
@@ -899,6 +901,12 @@ Responde siempre en ESPAÑOL. Tienes acceso a todas las herramientas.`;
         this.abortController = null;
         this.isStreaming = false;
         this.updateUIState();
+
+        // Mostrar botón de restaurar si se hicieron cambios en archivos
+        if (this._currentCheckpointId) {
+          this.addCheckpointRestoreButton(this._currentCheckpointId);
+          this._currentCheckpointId = null;
+        }
       }
     }
   }
@@ -1259,6 +1267,47 @@ Responde siempre en ESPAÑOL. Tienes acceso a todas las herramientas.`;
     }
 
     this.addToolStep(msgEl, "running", tool, this.describeAction(tool, params));
+
+    // ── Checkpoint: capturar estado ANTES de modificar archivos ──────────────
+    const FILE_MUTATING_TOOLS = new Set([
+      "write_file", "create_file", "delete_file",
+      "apply_diff", "move_file", "delete_directory",
+    ]);
+    if (FILE_MUTATING_TOOLS.has(tool)) {
+      const affectedPath =
+        params.path || params.source || params.destination || null;
+      if (affectedPath) {
+        checkpointManager.stageFile(this.resolvePath(affectedPath));
+        if (params.destination) {
+          checkpointManager.stageFile(this.resolvePath(params.destination));
+        }
+        // Si no hay checkpoint activo para esta "vuelta" del agente, crearlo
+        if (!this._currentCheckpointId) {
+          this._currentCheckpointId = await checkpointManager.createCheckpoint(
+            `Antes de: ${this.describeAction(tool, params)}`
+          );
+        } else {
+          // Acumular en el checkpoint existente (misma vuelta del agente)
+          const cp = checkpointManager.getById(this._currentCheckpointId);
+          if (cp) {
+            const resolved = this.resolvePath(affectedPath);
+            if (!cp.files.some((f) => f.path === resolved)) {
+              try {
+                const r = await window.api.agentReadFile(resolved);
+                cp.files.push({
+                  path: resolved,
+                  content: r?.content ?? r ?? "",
+                  existed: true,
+                });
+              } catch {
+                cp.files.push({ path: resolved, content: "", existed: false });
+              }
+            }
+          }
+        }
+      }
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     try {
       const result = await this.executeTool(tool, params);
@@ -1800,6 +1849,78 @@ Responde siempre en ESPAÑOL. Tienes acceso a todas las herramientas.`;
     `;
 
     stepsEl.appendChild(step);
+    this.scrollToBottom();
+  }
+
+  /**
+   * Agrega un botón de "Restaurar checkpoint" al chat después de que el agente
+   * modifique archivos. Similar al sistema de checkpoints de Cursor.
+   */
+  addCheckpointRestoreButton(checkpointId) {
+    const cp = checkpointManager.getById(checkpointId);
+    if (!cp || cp.files.length === 0) return;
+
+    const messages = this.container.querySelector("#ai-messages");
+    const el = document.createElement("div");
+    el.className = "ai-checkpoint-bar";
+    el.dataset.checkpointId = checkpointId;
+
+    const fileList = cp.files
+      .map((f) => {
+        const name = f.path.split(/[\\/]/).pop();
+        return `<span class="ai-cp-file">${escapeHtml(name)}</span>`;
+      })
+      .join("");
+
+    el.innerHTML = `
+      <div class="ai-cp-info">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+          <path d="M3 3v5h5"/>
+        </svg>
+        <span class="ai-cp-label">Checkpoint guardado</span>
+        <div class="ai-cp-files">${fileList}</div>
+      </div>
+      <button class="ai-cp-restore-btn" title="Revertir cambios del agente a este checkpoint">
+        ↩ Restaurar
+      </button>
+    `;
+
+    el.querySelector(".ai-cp-restore-btn").addEventListener("click", async () => {
+      const btn = el.querySelector(".ai-cp-restore-btn");
+      btn.disabled = true;
+      btn.textContent = "Restaurando...";
+      try {
+        const { restored, deleted } = await checkpointManager.restoreCheckpoint(checkpointId);
+
+        // Sincronizar editor para los archivos restaurados
+        for (const fp of restored) {
+          try {
+            const r = await window.api.agentReadFile(fp);
+            const content = r?.content ?? r ?? "";
+            this.syncEditorIfOpen(fp, content);
+          } catch {}
+        }
+        // Cerrar tabs de archivos que se eliminaron
+        for (const fp of deleted) {
+          this.closeTabIfOpen(fp);
+        }
+        this.state.emit("refreshTree");
+
+        btn.textContent = "✓ Restaurado";
+        btn.style.background = "var(--color-success, #238636)";
+        el.classList.add("ai-cp-restored");
+
+        const total = restored.length + deleted.length;
+        this.appendSystemNote(`Checkpoint restaurado: ${total} archivo(s) revertidos.`);
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = "↩ Restaurar";
+        this.appendSystemNote(`Error al restaurar: ${err.message}`);
+      }
+    });
+
+    messages.appendChild(el);
     this.scrollToBottom();
   }
 
