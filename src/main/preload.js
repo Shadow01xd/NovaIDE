@@ -116,4 +116,19 @@ contextBridge.exposeInMainWorld('api', {
   // Live Server
   liveServerStart: (root, port)    => ipcRenderer.invoke('live-server:start', { rootPath: root, port }),
   liveServerStop: ()               => ipcRenderer.invoke('live-server:stop'),
+
+  // Preview reload events
+  onPreviewReload: (fn) => {
+    const w = () => fn()
+    ipcRenderer.on('preview:reload', w)
+    return () => ipcRenderer.removeListener('preview:reload', w)
+  },
+
+  // Preview window
+  previewWindowOpen: (url) => ipcRenderer.invoke('preview-window:open', { url }),
+  previewWindowReload: () => ipcRenderer.invoke('preview-window:reload'),
+  previewWindowClose: () => ipcRenderer.invoke('preview-window:close'),
+
+  // Project root notification
+  sendProjectRoot: (rootPath) => ipcRenderer.send('project:root-changed', rootPath),
 })

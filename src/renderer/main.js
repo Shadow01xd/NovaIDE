@@ -11,6 +11,7 @@ import { DragAndDropManager }  from './components/drag-drop.js'
 // Importar sistema de temas
 import { themeManager }        from './components/ThemeManager.js'
 import { createThemeSelectorPopup } from './components/ThemeSelectorPopup.js'
+import { createPreviewUrlPopup } from './components/PreviewUrlPopup.js'
 import { createHistoryTimeline } from './components/history-timeline.js'
 import { historyManager } from './utils/history-manager.js'
 import './styles/history-timeline.css'
@@ -89,6 +90,7 @@ const editor = await createEditor(document.getElementById('editor'), state, them
 window.__editorInstance = editor
 createAIAgent(document.getElementById('ai-panel'), state)
 createStatusBar(document.getElementById('statusbar'), state)
+const previewUrlPopup = createPreviewUrlPopup(state)
 createHistoryTimeline(document.getElementById('ide-main'), state)
 
 // ── Drag and Drop Manager ────────────────────────────────────────────────────
@@ -154,6 +156,54 @@ state.on('panelToggle', ({ panel, open }) => {
     document.getElementById('terminal').style.display = open ? 'flex' : 'none'
     state.terminalOpen = open
   }
+})
+
+async function ensureLiveServerRunning() {
+  if (state.liveServerRunning && state.liveServerUrl) return true
+  if (state.liveServerRunning && !state.liveServerUrl) {
+    state.liveServerUrl = `http://localhost:${state.liveServerPort || 5500}`
+    return true
+  }
+
+  const root = state.currentFolder || (state.currentFile ? await window.api.pathDirname(state.currentFile) : null)
+  if (!root) return false
+
+  try {
+    const result = await window.api.liveServerStart(root, 5500)
+    state.liveServerRunning = true
+    state.liveServerUrl = result.url || `http://localhost:${result.port}`
+    state.liveServerPort = result.port
+    state.emit('liveServerChanged', { running: true, url: state.liveServerUrl, port: result.port })
+    return true
+  } catch (e) {
+    state.liveServerRunning = false
+    state.liveServerUrl = null
+    console.error('[Preview] liveServerStart failed:', e)
+    return false
+  }
+}
+
+async function openPreviewWindow() {
+  const ok = await ensureLiveServerRunning()
+  if (!ok) {
+    console.error('[Preview] No se pudo iniciar el servidor de preview.')
+    return
+  }
+  
+  const base = state.liveServerUrl || `http://localhost:${state.liveServerPort || 5500}`
+  const f = state.currentFile
+  const filename = f ? f.replace(/\\/g, '/').split('/').pop() : ''
+  const url = filename ? `${base}/${filename}` : `${base}/`
+  await window.api.previewWindowOpen(url)
+}
+
+state.on('previewRequested', async () => {
+  try { await openPreviewWindow() } catch {}
+})
+
+// Listener para recarga del preview cuando el watcher detecta cambios
+window.api.onPreviewReload(() => {
+  window.api.previewWindowReload()
 })
 
 // ── Panel IA ─────────────────────────────────────────────────────────────────
@@ -253,7 +303,11 @@ window.api.onMenu(async (event) => {
   switch (event) {
     case 'openFolder': {
       const folder = await window.api.openFolder()
-      if (folder) { state.currentFolder = folder; state.emit('refreshTree') }
+      if (folder) { 
+        state.currentFolder = folder; 
+        state.emit('refreshTree');
+        window.api.sendProjectRoot(folder);
+      }
       break
     }
     case 'newFile': {
@@ -334,6 +388,18 @@ document.addEventListener('keydown', async (e) => {
   if (e.shiftKey && e.key === 'E')                { e.preventDefault(); document.querySelector('[data-panel="explorer"]')?.click(); return }
   if (e.shiftKey && e.key === 'F')                { e.preventDefault(); document.querySelector('[data-panel="search"]')?.click(); return }
   if (e.shiftKey && e.key === 'X')                { e.preventDefault(); document.querySelector('[data-panel="extensions"]')?.click(); return }
+  
+  if (e.key === 'F5' && !e.shiftKey && !e.altKey) { e.preventDefault(); openPreviewWindow(); return }
+  
+  // Nuevo atajo: Ctrl+Alt+F5 para proyectos Node (con popup de URL)
+  if (e.key === 'F5' && e.altKey && !e.shiftKey) {
+    e.preventDefault()
+    previewUrlPopup.show((url) => {
+      window.api.previewWindowOpen(url)
+    })
+    return
+  }
+
   if (e.key === 's' && !e.shiftKey) {
     if (!state.currentFile || !state.editorInstance) return
     e.preventDefault()

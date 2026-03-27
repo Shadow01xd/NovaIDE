@@ -11,6 +11,7 @@ export const state = {
   sidebarPanel: 'explorer', // 'explorer' | 'search' | 'extensions'
   terminalOpen: false,
   aiPanelOpen: true,
+  previewOpen: false,
   terminalHeight: 220,
   
   // Live Server State
@@ -21,6 +22,7 @@ export const state = {
   // Panel sizes
   sidebarWidth: 260,
   aiPanelWidth: 340,
+  previewWidth: 420,
 
   // AI
   aiModel: 'deepseek-coder',

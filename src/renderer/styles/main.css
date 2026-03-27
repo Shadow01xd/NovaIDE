@@ -2210,3 +2210,97 @@ body.is-resizing-ai .ai-server-frame {
   .ide-statusbar { font-size: 10px; padding: 0 8px; }
   .sb-right { display: none; }
 }
+
+/* ── Preview URL Popup (Migrated) ────────────────────────────────────────── */
+.preview-url-popup {
+  position: fixed;
+  top: 60px;
+  left: 50%;
+  transform: translate(-50%, -20px);
+  width: 450px;
+  background: var(--bg2);
+  border: 1px solid var(--bg4);
+  border-radius: var(--r);
+  padding: 16px;
+  z-index: 10000;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.preview-url-popup-header {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text1);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.preview-url-popup-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preview-url-popup-hint {
+  font-size: 11px;
+  color: var(--text2);
+  text-align: right;
+  opacity: 0.8;
+}
+
+.ide-preview { 
+  width: 420px; 
+  min-width: 300px; 
+  max-width: 900px; 
+  background: var(--bg2); 
+  border-left: 1px solid var(--bg4); 
+  display: flex; 
+  flex-direction: column; 
+  overflow: hidden; 
+  flex-shrink: 0; 
+}
+.preview-header { 
+  height: 35px; 
+  display: flex; 
+  align-items: center; 
+  justify-content: space-between; 
+  padding: 0 8px 0 10px; 
+  border-bottom: 1px solid var(--bg4); 
+  flex-shrink: 0; 
+  background: var(--bg0); 
+}
+.preview-header span { 
+  font-size: 11px; 
+  font-weight: 600; 
+  letter-spacing: .08em; 
+  color: var(--text1); 
+}
+.preview-actions { display: flex; gap: 4px; }
+.preview-btn { 
+  width: 26px; 
+  height: 26px; 
+  border: 1px solid var(--bg4); 
+  background: var(--bg2); 
+  color: var(--text1); 
+  border-radius: 6px; 
+  cursor: pointer; 
+  display: inline-flex; 
+  align-items: center; 
+  justify-content: center; 
+}
+.preview-btn:hover { 
+  background: var(--bg3); 
+  color: var(--text0); 
+  border-color: var(--accent); 
+}
+.preview-frame { 
+  flex: 1; 
+  width: 100%; 
+  border: 0; 
+  background: #ffffff; 
+}

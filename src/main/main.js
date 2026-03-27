@@ -19,6 +19,11 @@ async function isViteRunning() {
 }
 
 let mainWin
+let previewWin = null
+let previewWatcher = null
+let previewWatcherRoot = null
+let previewReloadTimer = null
+
 async function createWindow() {
   mainWin = new BrowserWindow({
     width: 1600, height: 950, minWidth: 1000, minHeight: 600,
@@ -71,6 +76,7 @@ app.whenReady().then(() => {
   createWindow()
   registerMarketplaceHandlers()
   registerLiveServerHandlers()
+  registerPreviewWindowHandlers()
 })
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
@@ -1102,4 +1108,103 @@ function registerLiveServerHandlers() {
   } catch (err) {
     console.error('[Main] Failed to register Live Server handlers:', err)
   }
+}
+
+// ── Preview Window Management ────────────────────────────────────────────────
+
+function ensurePreviewWindow() {
+  if (previewWin && !previewWin.isDestroyed()) return previewWin
+
+  previewWin = new BrowserWindow({
+    width: 1100,
+    height: 800,
+    minWidth: 500,
+    minHeight: 400,
+    backgroundColor: '#0d1117',
+    title: 'Preview',
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  })
+
+  previewWin.on('closed', () => {
+    previewWin = null
+  })
+
+  return previewWin
+}
+
+function stopPreviewWatcher() {
+  try {
+    if (previewWatcher) previewWatcher.close()
+  } catch {}
+  previewWatcher = null
+  previewWatcherRoot = null
+  if (previewReloadTimer) clearTimeout(previewReloadTimer)
+  previewReloadTimer = null
+}
+
+function startPreviewWatcher(rootPath) {
+  if (!rootPath) return
+  const root = path.resolve(rootPath)
+
+  if (previewWatcher && previewWatcherRoot === root) return
+  stopPreviewWatcher()
+
+  previewWatcherRoot = root
+
+  try {
+    previewWatcher = fs.watch(root, { recursive: true }, (_eventType, filename) => {
+      if (!filename) return
+
+      const lower = String(filename).toLowerCase()
+      if (lower.includes(`${path.sep}.git${path.sep}`) || lower.startsWith('.git' + path.sep) || lower === '.git') return
+      if (lower.endsWith('.map')) return
+
+      if (previewReloadTimer) clearTimeout(previewReloadTimer)
+      previewReloadTimer = setTimeout(() => {
+        try {
+          if (previewWin && !previewWin.isDestroyed()) {
+            previewWin.webContents.reloadIgnoringCache()
+          } else if (mainWin && !mainWin.isDestroyed()) {
+            mainWin.webContents.send('preview:reload')
+          }
+        } catch {}
+      }, 150)
+    })
+  } catch (e) {
+    console.error('[Main] Failed to start preview watcher:', e)
+    stopPreviewWatcher()
+  }
+}
+
+function registerPreviewWindowHandlers() {
+  ipcMain.handle('preview-window:open', async (_, { url }) => {
+    const win = ensurePreviewWindow()
+    win.loadURL(url)
+    if (!win.isVisible()) win.show()
+    win.focus()
+    return true
+  })
+
+  ipcMain.handle('preview-window:reload', async () => {
+    if (!previewWin || previewWin.isDestroyed()) return false
+    try {
+      previewWin.webContents.reloadIgnoringCache()
+      return true
+    } catch { return false }
+  })
+
+  ipcMain.handle('preview-window:close', async () => {
+    if (!previewWin || previewWin.isDestroyed()) return false
+    previewWin.close()
+    return true
+  })
+
+  // Integración con el watcher de archivos del proyecto
+  ipcMain.on('project:root-changed', (_, rootPath) => {
+    if (rootPath) startPreviewWatcher(rootPath)
+    else stopPreviewWatcher()
+  })
 }
