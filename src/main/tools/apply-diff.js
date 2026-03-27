@@ -22,12 +22,15 @@ function applyUnifiedDiff(filePath, diffText) {
       return { success: false, error: 'Invalid diff format or empty diff.' };
     }
 
-    const newContent = diff.applyPatch(currentContent, patches[0]);
+    // Try with increasing fuzz tolerance so minor line-number drift doesn't break the patch
+    let newContent = diff.applyPatch(currentContent, patches[0], { fuzzFactor: 0 });
+    if (newContent === false) newContent = diff.applyPatch(currentContent, patches[0], { fuzzFactor: 2 });
+    if (newContent === false) newContent = diff.applyPatch(currentContent, patches[0], { fuzzFactor: 4 });
 
     if (newContent === false) {
-      return { 
-        success: false, 
-        error: 'Failed to apply patch. The diff might be outdated or incorrect for this file version.' 
+      return {
+        success: false,
+        error: 'Failed to apply patch. The diff context lines do not match the file content.'
       };
     }
 

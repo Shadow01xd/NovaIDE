@@ -861,6 +861,59 @@ ipcMain.handle('agent:applyDiff', async (_, p, diffText) => {
   return applyUnifiedDiff(p, diffText)
 })
 
+ipcMain.handle('agent:searchReplace', async (_, filePath, search, replace) => {
+  try {
+    if (!fs.existsSync(filePath)) return { success: false, error: `File not found: ${filePath}` }
+    const content = fs.readFileSync(filePath, 'utf-8')
+
+    // Pairs: [unicode, html-entity] — try both directions automatically
+    const ENTITY_PAIRS = [
+      ['©','&copy;'], ['®','&reg;'], ['™','&trade;'],
+      ['–','&ndash;'], ['—','&mdash;'],
+      ['"','&ldquo;'],['"','&rdquo;'],["'","&lsquo;"],["'","&rsquo;"],
+      ['<','&lt;'],['>','&gt;'],['&','&amp;'],
+    ]
+
+    function applyEntityTransform(s, direction) {
+      // direction: 0 = unicode→html, 1 = html→unicode
+      let r = s
+      for (const [uni, html] of ENTITY_PAIRS) {
+        if (direction === 0) r = r.split(uni).join(html)
+        else r = r.split(html).join(uni)
+      }
+      return r
+    }
+
+    // Try exact, then html-entity variant, then unicode variant
+    const candidates = [
+      [search, replace],
+      [applyEntityTransform(search, 0), applyEntityTransform(replace, 0)],  // unicode→html
+      [applyEntityTransform(search, 1), applyEntityTransform(replace, 1)],  // html→unicode
+      [search.trim(), replace.trim()],
+    ]
+
+    const match = candidates.find(([s]) => content.includes(s))
+    if (!match) {
+      // Include a small snippet near the first digit-year to help the model
+      const yearMatch = content.match(/20\d{2}/)
+      const ctx = yearMatch
+        ? `\nContexto en el archivo: ${JSON.stringify(content.slice(Math.max(0, yearMatch.index - 30), yearMatch.index + 50))}`
+        : ''
+      return {
+        success: false,
+        error: `Texto no encontrado: ${JSON.stringify(search.slice(0, 120))}${ctx}\nCopia el texto exacto del archivo (puede usar &copy; en lugar de © u otras entidades HTML).`
+      }
+    }
+
+    const [actualSearch, actualReplace] = match
+    const newContent = content.split(actualSearch).join(actualReplace)
+    fs.writeFileSync(filePath, newContent, 'utf-8')
+    return { success: true, content: newContent }
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
+
 // ── Helper: streaming SSE desde main process ─────────────────────────────────
 async function streamSSE(url, body, headers, reqId) {
   const res = await fetch(url, {

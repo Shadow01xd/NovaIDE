@@ -672,13 +672,17 @@ PROTOCOLO DE EDICIÓN — CRÍTICO
    → SÍ: procede directamente a editar (NO uses read_file innecesariamente)
    → NO: usa read_file PRIMERO, sin excepción
 
-2. ¿Cuánto cambia el archivo?
-   → Cambios puntuales (< 30% del archivo): usa apply_diff
-   → Cambios grandes (> 30% del archivo o reescritura): usa write_file con el archivo COMPLETO
+2. ¿Qué tipo de cambio es?
+   → Sustituir texto exacto (año, nombre, palabra): usa search_replace ← MÁS SIMPLE Y SEGURO
+   → Cambios puntuales con contexto (< 30% del archivo): usa apply_diff
+   → Cambios grandes (> 30%) o reescritura total: usa write_file con CONTENIDO COMPLETO
    → Archivo nuevo: usa create_file
 
-3. apply_diff falló o dio error:
-   → NO reintentas el mismo diff → usa write_file con el contenido completo correcto
+3. apply_diff falló:
+   → El error YA INCLUYE el contenido actual del archivo
+   → ⛔ NO leas el archivo de nuevo — el contenido está en el mensaje de error
+   → USA INMEDIATAMENTE write_file con el contenido completo corregido
+   → NUNCA reintentas apply_diff dos veces seguidas
 
 **EXPLORACIÓN:**
 - Usa list_files / get_project_structure solo si no sabes qué archivos existen
@@ -696,10 +700,11 @@ REGLAS DE CÓDIGO
 1. **Nunca asumas** el contenido de un archivo — léelo si no lo tienes en contexto
 2. **Código completo** — nunca dejes TODOs, "..." o partes incompletas
 3. **NUNCA uses create-react-app** — usa Vite o crea archivos manualmente
-4. **Si algo falla** — cambia de estrategia (ej: apply_diff falló → usa write_file)
-5. **Máx. 12 pasos** por tarea — sé eficiente, no repitas acciones
+4. **Si algo falla** — cambia de estrategia inmediatamente, no repitas la acción fallida
+5. **Máx. 8 pasos** por tarea — sé eficiente, no repitas acciones
 6. **Responde en ESPAÑOL**, el código en inglés
 7. **Un tool call a la vez** — ejecuta, lee el resultado, luego decide el siguiente paso
+8. **Para cambios simples de texto** (año, versión, URL, color) → SIEMPRE usa search_replace
 
 ════════════════════════════════════════
 HERRAMIENTAS
@@ -715,6 +720,8 @@ HERRAMIENTAS
   get_diagnostics      {"tool":"get_diagnostics","params":{}}
 
 ✏️ ESCRITURA:
+  search_replace       {"tool":"search_replace","params":{"path":"index.html","search":"© 2023","replace":"© 2026"}}
+                       → Sustituye texto exacto en el archivo. PREFERIDO para cambios simples.
   write_file           {"tool":"write_file","params":{"path":"archivo.js","content":"CONTENIDO COMPLETO AQUÍ"}}
   create_file          {"tool":"create_file","params":{"path":"nuevo.js","content":"..."}}
   apply_diff           {"tool":"apply_diff","params":{"path":"src/App.jsx","diff":"..."}}
@@ -1129,7 +1136,11 @@ HERRAMIENTAS DISPONIBLES
 
         // Mostrar botón de restaurar si se hicieron cambios en archivos
         if (this._currentCheckpointId) {
-          this.addCheckpointRestoreButton(this._currentCheckpointId);
+          try {
+            this.addCheckpointRestoreButton(this._currentCheckpointId);
+          } catch (cpErr) {
+            this.appendSystemNote(`[Checkpoint error] ${cpErr.message}`);
+          }
           this._currentCheckpointId = null;
         }
       }
@@ -1508,7 +1519,7 @@ HERRAMIENTAS DISPONIBLES
     // ── Checkpoint: capturar estado ANTES de modificar ───────────────────────
     const FILE_MUTATING_TOOLS = new Set([
       "write_file", "create_file", "delete_file",
-      "apply_diff", "move_file", "delete_directory",
+      "apply_diff", "search_replace", "move_file", "delete_directory",
     ]);
     if (FILE_MUTATING_TOOLS.has(tool)) {
       const isDir = tool === "delete_directory";
@@ -1596,7 +1607,7 @@ HERRAMIENTAS DISPONIBLES
     // ─────────────────────────────────────────────────────────────────────────
 
     // ── Capturar contenido previo para diff (write/create/apply_diff) ────────
-    const DIFF_TOOLS = new Set(["write_file", "create_file", "apply_diff", "append_to_file"]);
+    const DIFF_TOOLS = new Set(["write_file", "create_file", "apply_diff", "search_replace", "append_to_file"]);
     let oldContent = null;
     if (DIFF_TOOLS.has(tool) && params.path) {
       try {
@@ -1619,12 +1630,13 @@ HERRAMIENTAS DISPONIBLES
       if (DIFF_TOOLS.has(tool) && params.path) {
         const fp = this.resolvePath(params.path);
         let newContent;
-        if (tool === "apply_diff") {
-          if (stepEl) this.renderParsedDiff(stepEl, params.diff || "", params.path);
+        if (tool === "apply_diff" || tool === "search_replace") {
+          if (tool === "apply_diff" && stepEl) this.renderParsedDiff(stepEl, params.diff || "", params.path);
           try {
             const r = await window.api.agentReadFile(fp);
             newContent = r?.success ? (r.content ?? "") : "";
           } catch { newContent = ""; }
+          if (tool === "search_replace" && stepEl) this.renderFileDiff(stepEl, oldContent ?? "", newContent, params.path);
         } else {
           newContent = tool === "append_to_file"
             ? (oldContent ?? "") + "\n" + (params.content ?? "")
@@ -1632,6 +1644,11 @@ HERRAMIENTAS DISPONIBLES
           if (stepEl) this.renderFileDiff(stepEl, oldContent ?? "", newContent, params.path);
         }
         this.showEditorDiff(fp, oldContent ?? "", newContent);
+        // Guardar estadísticas en checkpoint
+        if (this._currentCheckpointId) {
+          const stats = this._computeChangeStats(oldContent ?? "", newContent ?? "");
+          checkpointManager.setEntryStats(this._currentCheckpointId, fp, stats.added, stats.removed);
+        }
       }
       // ─────────────────────────────────────────────────────────────────────
 
@@ -1644,6 +1661,21 @@ HERRAMIENTAS DISPONIBLES
       });
       return false;
     }
+  }
+
+  /** Cuenta líneas añadidas/eliminadas entre dos versiones de contenido */
+  _computeChangeStats(oldContent, newContent) {
+    const oldLines = (oldContent || '').split('\n');
+    const newLines = (newContent || '').split('\n');
+    const maxLen = Math.max(oldLines.length, newLines.length);
+    let added = 0, removed = 0;
+    for (let i = 0; i < maxLen; i++) {
+      const o = oldLines[i], n = newLines[i];
+      if (o === undefined) added++;
+      else if (n === undefined) removed++;
+      else if (o !== n) { added++; removed++; }
+    }
+    return { added, removed };
   }
 
   /** Genera un diff visual simple entre oldContent y newContent */
@@ -1732,6 +1764,7 @@ HERRAMIENTAS DISPONIBLES
       write_file:           `Escribiendo ${file}`,
       create_file:          `Creando ${file}`,
       apply_diff:           `Editando ${file}`,
+      search_replace:       `Reemplazando en ${file}`,
       append_to_file:       `Actualizando ${file}`,
       delete_file:          `Eliminando ${file}`,
       delete_directory:     `Eliminando carpeta ${file}`,
@@ -1900,7 +1933,7 @@ HERRAMIENTAS DISPONIBLES
       return base.replace(/[/\\]+$/, "") + sep + p.replace(/^[/\\]+/, "");
     };
 
-    const allowedTools = ["read_file","read_multiple_files","write_file","create_file","append_to_file","delete_file","delete_directory","create_directory","move_file","list_files","get_project_structure","search_in_files","run_command","get_open_file","open_file","insert_at_cursor","replace_selection","get_diagnostics","write_memory","read_memory","apply_diff"];
+    const allowedTools = ["read_file","read_multiple_files","write_file","create_file","append_to_file","delete_file","delete_directory","create_directory","move_file","list_files","get_project_structure","search_in_files","run_command","get_open_file","open_file","insert_at_cursor","replace_selection","get_diagnostics","write_memory","read_memory","apply_diff","search_replace"];
     if (!allowedTools.includes(tool)) {
       return `ERROR: La herramienta "${tool}" no existe. Por favor, usa SOLO una de las herramientas permitidas: ${allowedTools.join(", ")}.`;
     }
@@ -2180,17 +2213,26 @@ HERRAMIENTAS DISPONIBLES
         return `Contenido agregado a: ${fp}`;
       }
 
+      case "search_replace": {
+        const fp = resolve(params.path);
+        this.ensureWorkspacePath(fp, "No se puede editar fuera de la carpeta abierta.");
+        if (!params.search) throw new Error('search_replace requiere el parámetro "search".');
+        const r = await window.api.agentSearchReplace(fp, params.search, params.replace ?? "");
+        if (!r.success) throw new Error(`❌ search_replace FALLÓ — el archivo NO fue modificado.\n${r.error}\n\nUSA el texto exacto que aparece en el archivo, o usa write_file con el archivo completo.`);
+        this.syncEditorIfOpen(fp, r.content);
+        return `✅ Reemplazo aplicado correctamente en: ${fp}`;
+      }
+
       case "apply_diff": {
         const fp = resolve(params.path);
         this.ensureWorkspacePath(fp, "No se puede editar fuera de la carpeta abierta.");
         const r = await window.api.agentApplyDiff(fp, params.diff);
         if (!r.success) {
-          // Auto-fallback: provide detailed error + current file content for retry
           const current = await window.api.agentReadFile(fp);
           const fileInfo = current.success
-            ? `\nContenido actual del archivo (${current.content.split('\n').length} líneas):\n\`\`\`\n${current.content.slice(0, 6000)}\n\`\`\``
+            ? `\n\nContenido actual (${current.content.split('\n').length} líneas) — usa este contenido para write_file:\n\`\`\`\n${current.content.slice(0, 6000)}\n\`\`\``
             : "";
-          throw new Error(`apply_diff falló: ${r.error}${fileInfo}\n\n→ Usa write_file con el contenido completo corregido, o corrige el diff.`);
+          throw new Error(`apply_diff falló: ${r.error}${fileInfo}\n\n⛔ STOP — NO leas el archivo otra vez. El contenido está arriba. USA write_file AHORA con el texto correcto.`);
         }
         this.syncEditorIfOpen(fp, r.content);
         this.highlightDiff(fp, params.diff);
@@ -2199,7 +2241,7 @@ HERRAMIENTAS DISPONIBLES
 
       default:
         throw new Error(
-          `Herramienta desconocida: "${tool}". Disponibles: read_file, read_multiple_files, apply_diff, write_file, create_file, append_to_file, create_directory, delete_file, move_file, list_files, get_project_structure, search_in_files, run_command, get_diagnostics, get_open_file, open_file, insert_at_cursor, replace_selection, write_memory, read_memory`,
+          `Herramienta desconocida: "${tool}". Disponibles: read_file, read_multiple_files, search_replace, apply_diff, write_file, create_file, append_to_file, create_directory, delete_file, move_file, list_files, get_project_structure, search_in_files, run_command, get_diagnostics, get_open_file, open_file, insert_at_cursor, replace_selection, write_memory, read_memory`,
         );
     }
   }
@@ -2385,8 +2427,7 @@ HERRAMIENTAS DISPONIBLES
   }
 
   /**
-   * Agrega un botón de "Restaurar checkpoint" al chat después de que el agente
-   * modifique archivos. Similar al sistema de checkpoints de Cursor.
+   * Checkpoint card estilo Cursor: timeline, stats de líneas, colapsable.
    */
   addCheckpointRestoreButton(checkpointId) {
     const cp = checkpointManager.getById(checkpointId);
@@ -2397,65 +2438,107 @@ HERRAMIENTAS DISPONIBLES
     el.className = "ai-checkpoint-bar";
     el.dataset.checkpointId = checkpointId;
 
-    // Construir lista de badges: directorios primero, luego archivos individuales
-    const topLevel = cp.entries.map((e) => {
+    const relTime = (ts) => {
+      const s = (Date.now() - ts) / 1000;
+      if (s < 90) return "ahora mismo";
+      if (s < 3600) return `hace ${Math.floor(s / 60)} min`;
+      return `hace ${Math.floor(s / 3600)} h`;
+    };
+
+    // Filas de archivos con stats
+    const fileRows = cp.entries.map((e) => {
       const name = e.path.split(/[\\/]/).pop();
       const isDir = e.type === "directory";
-      const icon = isDir ? "📁" : "📄";
-      const filesCount = isDir && e.files ? ` (${e.files.length} archivos)` : "";
-      return `<span class="ai-cp-file ${isDir ? "ai-cp-file--dir" : ""}">${icon} ${escapeHtml(name)}${filesCount}</span>`;
+      const dotCls = isDir ? "ai-cp-file-dot--dir" : "";
+      let statsHtml = "";
+      if (e.stats) {
+        statsHtml = `<span class="ai-cp-stats"><span class="ai-cp-stat-add">+${e.stats.added}</span><span class="ai-cp-stat-del">−${e.stats.removed}</span></span>`;
+      } else if (isDir && e.files) {
+        statsHtml = `<span class="ai-cp-stat-dir">${e.files.length} arch.</span>`;
+      }
+      return `<div class="ai-cp-file-row">
+        <span class="ai-cp-file-dot ${dotCls}"></span>
+        <span class="ai-cp-file-name" title="${escapeHtml(e.path)}">${escapeHtml(name)}</span>
+        ${statsHtml}
+      </div>`;
     }).join("");
 
+    const fileCount = cp.entries.length;
+    const subtitle = `${fileCount} ${fileCount === 1 ? "archivo" : "archivos"} · ${relTime(cp.timestamp)}`;
+
     el.innerHTML = `
-      <div class="ai-cp-info">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-          <path d="M3 3v5h5"/>
-        </svg>
-        <span class="ai-cp-label">Checkpoint</span>
-        <div class="ai-cp-files">${topLevel}</div>
+      <div class="ai-cp-header">
+        <div class="ai-cp-left">
+          <svg class="ai-cp-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+          </svg>
+          <div class="ai-cp-info">
+            <span class="ai-cp-title">Checkpoint</span>
+            <span class="ai-cp-subtitle">${escapeHtml(subtitle)}</span>
+          </div>
+        </div>
+        <div class="ai-cp-actions">
+          <button class="ai-cp-toggle-btn" title="Ver archivos modificados">▾ Archivos</button>
+          <button class="ai-cp-restore-btn" title="Revertir todos los cambios">↩ Revertir</button>
+          <button class="ai-cp-accept-btn" title="Aceptar cambios">✓</button>
+        </div>
       </div>
-      <button class="ai-cp-restore-btn" title="Revertir TODOS los cambios de esta sesión del agente">
-        ↩ Restaurar
-      </button>
+      <div class="ai-cp-files-wrap" style="display:none">${fileRows}</div>
     `;
 
-    el.querySelector(".ai-cp-restore-btn").addEventListener("click", async () => {
-      const btn = el.querySelector(".ai-cp-restore-btn");
-      btn.disabled = true;
-      btn.textContent = "Restaurando...";
-      try {
-        const { restored, deleted, errors } = await checkpointManager.restoreCheckpoint(checkpointId);
+    if (!messages) return;
 
-        // Sincronizar editor para archivos restaurados
-        for (const fp of restored) {
-          if (fp.includes("(directorio")) continue; // skip dir-only labels
-          try {
-            const r = await window.api.agentReadFile(fp);
-            if (r?.success) this.syncEditorIfOpen(fp, r.content);
-          } catch {}
-        }
-        // Cerrar tabs de archivos que fueron eliminados (revertidos a no-existentes)
-        for (const fp of deleted) {
-          this.closeTabIfOpen(fp);
-        }
-        this.state.emit("refreshTree");
+    // Toggle archivo list
+    const toggleBtn = el.querySelector(".ai-cp-toggle-btn");
+    const restoreBtn = el.querySelector(".ai-cp-restore-btn");
+    const acceptBtn = el.querySelector(".ai-cp-accept-btn");
+    const wrap = el.querySelector(".ai-cp-files-wrap");
 
-        btn.textContent = "✓ Restaurado";
-        el.classList.add("ai-cp-restored");
+    if (toggleBtn && wrap) {
+      toggleBtn.addEventListener("click", () => {
+        const opening = wrap.style.display === "none" || !wrap.style.display;
+        wrap.style.display = opening ? "flex" : "none";
+        toggleBtn.textContent = opening ? "▴" : "▾";
+      });
+    }
 
-        const total = restored.length + deleted.length;
-        const errTxt = errors.length ? ` (${errors.length} error(es))` : "";
-        this.appendSystemNote(`✓ Checkpoint restaurado — ${total} elemento(s) revertido(s)${errTxt}`);
-        if (errors.length) {
-          errors.forEach(e => this.appendSystemNote(`  ⚠ ${e}`));
+    if (acceptBtn) {
+      acceptBtn.addEventListener("click", () => {
+        el.classList.add("ai-cp-accepted");
+        setTimeout(() => el.remove(), 280);
+      });
+    }
+
+    if (restoreBtn) {
+      restoreBtn.addEventListener("click", async () => {
+        restoreBtn.disabled = true;
+        restoreBtn.textContent = "…";
+        try {
+          const { restored, deleted, errors } = await checkpointManager.restoreCheckpoint(checkpointId);
+          for (const fp of restored) {
+            if (fp.includes("(directorio")) continue;
+            try {
+              const r = await window.api.agentReadFile(fp);
+              if (r?.success) this.syncEditorIfOpen(fp, r.content);
+            } catch {}
+          }
+          for (const fp of deleted) this.closeTabIfOpen(fp);
+          this.state.emit("refreshTree");
+
+          restoreBtn.textContent = "✓ Restaurado";
+          el.classList.add("ai-cp-restored");
+
+          const total = restored.length + deleted.length;
+          const errTxt = errors.length ? ` (${errors.length} error(es))` : "";
+          this.appendSystemNote(`✓ Checkpoint restaurado — ${total} elemento(s) revertido(s)${errTxt}`);
+          if (errors.length) errors.forEach(e => this.appendSystemNote(`  ⚠ ${e}`));
+        } catch (err) {
+          restoreBtn.disabled = false;
+          restoreBtn.textContent = "↩ Restaurar";
+          this.appendSystemNote(`Error al restaurar checkpoint: ${err.message}`);
         }
-      } catch (err) {
-        btn.disabled = false;
-        btn.textContent = "↩ Restaurar";
-        this.appendSystemNote(`Error al restaurar checkpoint: ${err.message}`);
-      }
-    });
+      });
+    }
 
     messages.appendChild(el);
     this.scrollToBottom();

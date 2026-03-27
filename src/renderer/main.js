@@ -24,6 +24,9 @@ if (savedSettings?.sidebarWidth) state.sidebarWidth = savedSettings.sidebarWidth
 if (savedSettings?.aiPanelWidth) state.aiPanelWidth = savedSettings.aiPanelWidth
 if (savedSettings?.terminalHeight) state.terminalHeight = savedSettings.terminalHeight
 
+const STACKED_AI_BREAKPOINT = 1100
+const MOBILE_BREAKPOINT = 768
+
 // ── Layout HTML ──────────────────────────────────────────────────────────────
 document.getElementById('app').innerHTML = buildLayout()
 
@@ -91,10 +94,44 @@ createHistoryTimeline(document.getElementById('ide-main'), state)
 // ── Drag and Drop Manager ────────────────────────────────────────────────────
 new DragAndDropManager(state)
 
+function getVisibleSidebarWidth() {
+  const sidebarEl = document.getElementById('sidebar')
+  if (!sidebarEl || sidebarEl.style.display === 'none') return 0
+  return sidebarEl.offsetWidth || state.sidebarWidth || 0
+}
+
+function getMaxAiPanelWidth() {
+  if (window.innerWidth <= STACKED_AI_BREAKPOINT) {
+    return Math.max(0, window.innerWidth - 20)
+  }
+
+  const ideW = document.getElementById('ide')?.offsetWidth || window.innerWidth
+  const sideW = getVisibleSidebarWidth()
+  return Math.max(260, Math.min(560, ideW - sideW - 350 - 12))
+}
+
+function applyResponsivePanelSizing() {
+  const sidebarEl = document.getElementById('sidebar')
+  const aiPanelEl = document.getElementById('ai-panel')
+  const terminalEl = document.getElementById('terminal')
+
+  if (!sidebarEl || !aiPanelEl || !terminalEl) return
+
+  if (window.innerWidth <= MOBILE_BREAKPOINT) {
+    sidebarEl.style.width = '100%'
+  } else {
+    sidebarEl.style.width = state.sidebarWidth + 'px'
+  }
+
+  const maxAiWidth = getMaxAiPanelWidth()
+  const minAiWidth = window.innerWidth <= STACKED_AI_BREAKPOINT ? 0 : 260
+  const safeAiWidth = Math.max(minAiWidth, Math.min(state.aiPanelWidth, maxAiWidth))
+  aiPanelEl.style.width = safeAiWidth + 'px'
+  terminalEl.style.height = state.terminalHeight + 'px'
+}
+
 // ── Aplicar anchos guardados ───────────────────────────────────────────────────
-document.getElementById('sidebar').style.width = state.sidebarWidth + 'px'
-document.getElementById('ai-panel').style.width = state.aiPanelWidth + 'px'
-document.getElementById('terminal').style.height = state.terminalHeight + 'px'
+applyResponsivePanelSizing()
 
 // ── Aplicar estado inicial de paneles ───────────────────────────────────────────
 document.getElementById('ai-panel').style.display = state.aiPanelOpen ? 'flex' : 'none'
@@ -330,6 +367,7 @@ let resizingSidebar = false, startXSidebar = 0, startWSidebar = 0
 function resetGlobalInteractionState() {
   document.body.style.cursor = ''
   document.body.style.userSelect = ''
+  document.body.classList.remove('is-resizing-ai')
 }
 
 function stopAllResizing() {
@@ -362,24 +400,48 @@ document.addEventListener('mouseup', () => {
 // ── Resize handle del panel IA ────────────────────────────────────────────────
 const resizeAI = document.getElementById('resize-ai')
 let resizingAI = false, startXAI = 0, startWAI = 0
+let aiResizeFrame = null
+let pendingAIWidth = null
+
+function applyAIWidth(newW) {
+  document.getElementById('ai-panel').style.width = newW + 'px'
+  state.aiPanelWidth = newW
+}
 
 resizeAI.addEventListener('mousedown', (e) => {
   resizingAI = true
   startXAI   = e.clientX
   startWAI   = document.getElementById('ai-panel').offsetWidth
+  document.body.classList.add('is-resizing-ai')
   document.body.style.cursor    = 'ew-resize'
   document.body.style.userSelect = 'none'
 })
 
 document.addEventListener('mousemove', (e) => {
   if (!resizingAI) return
-  const newW = Math.max(260, Math.min(700, startWAI + (startXAI - e.clientX)))
-  document.getElementById('ai-panel').style.width = newW + 'px'
-  state.aiPanelWidth = newW
+  const ideW = document.getElementById('ide')?.offsetWidth || window.innerWidth
+  const sideW = document.getElementById('sidebar')?.offsetWidth || 260
+  const maxAI = Math.max(260, ideW - sideW - 350 - 12) // keep at least 350px for editor
+  const newW = Math.max(260, Math.min(maxAI, startWAI + (startXAI - e.clientX)))
+  pendingAIWidth = newW
+
+  if (aiResizeFrame) return
+  aiResizeFrame = window.requestAnimationFrame(() => {
+    aiResizeFrame = null
+    if (pendingAIWidth != null) applyAIWidth(pendingAIWidth)
+  })
 })
 
 document.addEventListener('mouseup', () => {
   if (!resizingAI) return
+  if (aiResizeFrame) {
+    window.cancelAnimationFrame(aiResizeFrame)
+    aiResizeFrame = null
+  }
+  if (pendingAIWidth != null) {
+    applyAIWidth(pendingAIWidth)
+    pendingAIWidth = null
+  }
   stopAllResizing()
 })
 
@@ -406,6 +468,10 @@ document.addEventListener('mousemove', (e) => {
 document.addEventListener('mouseup', () => {
   if (!resizingTerminal) return
   stopAllResizing()
+})
+
+window.addEventListener('resize', () => {
+  applyResponsivePanelSizing()
 })
 
 // Si se pierde el foco de la ventana o cambia visibilidad durante un resize,

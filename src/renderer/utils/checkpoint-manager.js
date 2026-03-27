@@ -200,6 +200,16 @@ export class CheckpointManager {
     cp.entries.push(...tempEntries)
   }
 
+  /**
+   * Guarda estadísticas de líneas (añadidas/eliminadas) en la entrada del checkpoint.
+   */
+  setEntryStats(id, path, added, removed) {
+    const cp = this.getById(id)
+    if (!cp) return
+    const entry = cp.entries.find(e => e.path === path)
+    if (entry) entry.stats = { added, removed }
+  }
+
   getAll() { return [...this.checkpoints].reverse() }
   getById(id) { return this.checkpoints.find(c => c.id === id) || null }
   remove(id) { this.checkpoints = this.checkpoints.filter(c => c.id !== id) }

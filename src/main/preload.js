@@ -91,6 +91,7 @@ contextBridge.exposeInMainWorld('api', {
   killServer: (reqId) => ipcRenderer.invoke('agent:killServer', reqId),
   agentGetProjectStructure: (p, depth)  => ipcRenderer.invoke('agent:getProjectStructure', p, depth),
   agentApplyDiff:           (p, diff)   => ipcRenderer.invoke('agent:applyDiff', p, diff),
+  agentSearchReplace:       (p, s, r)   => ipcRenderer.invoke('agent:searchReplace', p, s, r),
   agentReadDirRecursive:    (p)         => ipcRenderer.invoke('agent:readDirRecursive', p),
   
   // DeepSeek streaming
