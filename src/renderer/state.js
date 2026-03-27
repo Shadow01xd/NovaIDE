@@ -37,6 +37,7 @@ export const state = {
     wordWrap: 'on',
     minimap: true,
     theme: 'myide-dark',
+    maxIterations: 50,
   },
 
   _listeners: {},

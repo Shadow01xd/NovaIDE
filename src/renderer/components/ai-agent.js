@@ -163,6 +163,10 @@ export class AIAgent {
             <label>Modelo</label>
             <select id="ai-model-select" class="ai-select"><option>Cargando...</option></select>
           </div>
+          <div class="ai-settings-group">
+            <label>LÃ­mite de pasos (Iteraciones)</label>
+            <input type="number" id="ai-max-iter-input" class="ai-input" min="5" max="100" value="${this.state.settings?.maxIterations || 25}">
+          </div>
           <div class="ai-settings-group" id="ai-apikey-group" style="display:${this.provider === "deepseek" ? "block" : "none"}">
             <label>API Key DeepSeek</label>
             <input type="password" id="ai-apikey-input" class="ai-input" value="${escapeHtml(this.deepseekApiKey)}" placeholder="sk-...">
@@ -376,6 +380,16 @@ export class AIAgent {
         this.activeModel = e.target.value;
         this.state.aiModel = this.activeModel;
         this.updateBadge();
+      });
+    // Max Iterations
+    this.container
+      .querySelector("#ai-max-iter-input")
+      ?.addEventListener("change", (e) => {
+        const val = parseInt(e.target.value);
+        if (val >= 5 && val <= 100) {
+          this.state.settings.maxIterations = val;
+          this.state.emit('settingsChanged', this.state.settings);
+        }
       });
 
     // API keys
@@ -711,9 +725,9 @@ REGLAS DE CÓDIGO
 2. **Código completo** — nunca dejes TODOs, "..." o partes incompletas
 3. **NUNCA uses create-react-app** — usa Vite o crea archivos manualmente
 4. **Si algo falla** — cambia de estrategia inmediatamente, no repitas la acción fallida
-5. **Máx. 8 pasos** por tarea — sé eficiente, no repitas acciones
+5. **Completa la tarea eficientemente** — puedes usar múltiples herramientas en un solo turno si no dependen entre sí.
 6. **Responde en ESPAÑOL**, el código en inglés
-7. **Un tool call a la vez** — ejecuta, lee el resultado, luego decide el siguiente paso
+7. **Sé persistente** — no tengas miedo de realizar tareas complejas que requieran múltiples pasos.
 8. **Para cambios simples de texto** (año, versión, URL, color) → SIEMPRE usa search_replace
 
 ════════════════════════════════════════
@@ -1050,7 +1064,7 @@ HERRAMIENTAS DISPONIBLES
   // ==========================================================================
 
   async streamResponse(iteration) {
-    const MAX_ITER = 15;
+    const MAX_ITER = this.state.settings?.maxIterations || 25;
 
     if (iteration === 0) {
       this.abortController = new AbortController();
@@ -1070,7 +1084,7 @@ HERRAMIENTAS DISPONIBLES
     }
 
     if (iteration >= MAX_ITER) {
-      this.appendSystemNote("Límite de iteraciones alcanzado.");
+      this.appendSystemNote(`Límite de iteraciones alcanzado (${MAX_ITER}). Puedes aumentar este límite en los ajustes del agente si la tarea es muy compleja.`);
       return;
     }
 
@@ -1760,7 +1774,7 @@ HERRAMIENTAS DISPONIBLES
         if (this.isCodeLikeFile(fp)) {
           const diagnosticsSummary = this.collectEditorDiagnosticsSummary(fp);
           if (diagnosticsSummary) {
-            this.pushInternalMessage(`[Verificaci�n autom�tica de "${params.path}"]` + "`n" + diagnosticsSummary);
+            this.pushInternalMessage(`[Verificaci�n autom�tica de "${params.path}"]` + "`n" + diagnosticsSummary);
             if (diagnosticsSummary.includes("[ERROR]")) {
               this.appendSystemNote(`Se detectaron errores en ${params.path}. El agente intentará corregirlos.`);
             }
@@ -3388,5 +3402,6 @@ HERRAMIENTAS DISPONIBLES
 export function createAIAgent(container, state) {
   return new AIAgent({ container, state }).mount();
 }
+
 
 
