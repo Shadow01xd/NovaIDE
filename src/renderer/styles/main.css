@@ -1534,8 +1534,38 @@ html, body, #app { height: 100%; overflow: hidden; background: var(--bg1); color
   box-shadow: 0 4px 16px rgba(99,102,241,.25);
   max-width: 100%; min-width: 0;
   word-break: break-word; overflow-wrap: break-word;
+  position: relative;
 }
 .ai-msg--user .ai-msg-content { color: #fff; font-size: 13px; }
+.ai-msg-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+.ai-user-revert-btn {
+  border: 1px solid rgba(255,255,255,.24);
+  background: rgba(10,10,10,.18);
+  color: #fff;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, transform .12s, opacity .15s;
+  opacity: .88;
+}
+.ai-user-revert-btn:hover {
+  background: rgba(248,81,73,.18);
+  border-color: rgba(248,81,73,.55);
+  transform: translateY(-1px);
+}
+.ai-user-revert-btn:disabled {
+  opacity: .45;
+  cursor: default;
+  transform: none;
+}
+.ai-msg--user:not(:hover) .ai-user-revert-btn {
+  opacity: .72;
+}
 
 .ai-msg--assistant { align-items: flex-start; }
 .ai-msg-header {
@@ -2175,6 +2205,7 @@ body.is-resizing-ai .ai-server-frame {
   }
   .ai-suggestions { grid-template-columns: 1fr; }
   .ai-msg--user { padding-left: 0; }
+  .ai-msg-actions { justify-content: flex-start; }
   .resize-handle { display: none; }
   .ide-statusbar { font-size: 10px; padding: 0 8px; }
   .sb-right { display: none; }

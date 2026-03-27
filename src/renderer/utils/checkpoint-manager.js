@@ -19,6 +19,55 @@ export class CheckpointManager {
     this.checkpoints = []
     this.maxCheckpoints = 30
     this._staged = [] // [{ path, type: 'file'|'directory' }]
+    this.workspacePath = null
+    this.storageFileName = '.ai_checkpoints.json'
+    this._loadedWorkspace = null
+  }
+
+  getStoragePath() {
+    if (!this.workspacePath) return null
+    return this.workspacePath.replace(/[/\\]+$/, '') + '/' + this.storageFileName
+  }
+
+  async setWorkspace(workspacePath) {
+    const normalized = workspacePath || null
+    if (normalized === this.workspacePath && this._loadedWorkspace === normalized) return
+    this.workspacePath = normalized
+    this._staged = []
+    await this.loadFromDisk()
+  }
+
+  async loadFromDisk() {
+    if (!this.workspacePath) {
+      this.checkpoints = []
+      this._loadedWorkspace = null
+      return
+    }
+
+    const storagePath = this.getStoragePath()
+    try {
+      const r = await window.api.agentReadFile(storagePath)
+      if (!r?.success || !r.content) {
+        this.checkpoints = []
+      } else {
+        const parsed = JSON.parse(r.content)
+        this.checkpoints = Array.isArray(parsed?.checkpoints) ? parsed.checkpoints : []
+      }
+    } catch {
+      this.checkpoints = []
+    }
+    this._loadedWorkspace = this.workspacePath
+  }
+
+  async persist() {
+    if (!this.workspacePath) return
+    const storagePath = this.getStoragePath()
+    const payload = {
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      checkpoints: this.checkpoints,
+    }
+    await window.api.agentWriteFile(storagePath, JSON.stringify(payload, null, 2))
   }
 
   // ── Staging ────────────────────────────────────────────────
@@ -43,7 +92,7 @@ export class CheckpointManager {
    * @param {string} label
    * @returns {Promise<string|null>} id del checkpoint
    */
-  async createCheckpoint(label) {
+  async createCheckpoint(label, meta = {}) {
     const staged = [...this._staged]
     this._staged = []
     if (staged.length === 0) return null
@@ -61,9 +110,10 @@ export class CheckpointManager {
     if (entries.length === 0) return null
 
     const id = `cp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
-    const cp = { id, label, timestamp: Date.now(), entries }
+    const cp = { id, label, timestamp: Date.now(), entries, meta }
     this.checkpoints.push(cp)
     if (this.checkpoints.length > this.maxCheckpoints) this.checkpoints.shift()
+    await this.persist()
     return id
   }
 
@@ -198,6 +248,7 @@ export class CheckpointManager {
       await this._snapshotFile(path, tempEntries)
     }
     cp.entries.push(...tempEntries)
+    await this.persist()
   }
 
   /**
@@ -208,12 +259,33 @@ export class CheckpointManager {
     if (!cp) return
     const entry = cp.entries.find(e => e.path === path)
     if (entry) entry.stats = { added, removed }
+    void this.persist()
+  }
+
+  async setCheckpointMeta(id, meta = {}) {
+    const cp = this.getById(id)
+    if (!cp) return
+    cp.meta = { ...(cp.meta || {}), ...meta }
+    await this.persist()
   }
 
   getAll() { return [...this.checkpoints].reverse() }
   getById(id) { return this.checkpoints.find(c => c.id === id) || null }
-  remove(id) { this.checkpoints = this.checkpoints.filter(c => c.id !== id) }
-  clear() { this.checkpoints = []; this._staged = [] }
+  async remove(id) {
+    this.checkpoints = this.checkpoints.filter(c => c.id !== id)
+    await this.persist()
+  }
+  async removeMany(ids = []) {
+    if (!ids.length) return
+    const idSet = new Set(ids)
+    this.checkpoints = this.checkpoints.filter(c => !idSet.has(c.id))
+    await this.persist()
+  }
+  async clear() {
+    this.checkpoints = []
+    this._staged = []
+    await this.persist()
+  }
 }
 
 export const checkpointManager = new CheckpointManager()

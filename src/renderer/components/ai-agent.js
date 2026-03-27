@@ -88,6 +88,7 @@ export class AIAgent {
     this.repetitionCount = 0;
     this.projectType = null; // Will be auto-detected
     this._streamIteration = 0;
+    this._activeTurn = null;
 
     this.conversations = this.loadConversations();
   }
@@ -97,6 +98,7 @@ export class AIAgent {
   // ==========================================================================
 
   mount() {
+    this.ensureCheckpointStoreReady();
     this.render();
     this.attachEventListeners();
     this.updateUIState(); // garantizar estado inicial correcto
@@ -105,6 +107,14 @@ export class AIAgent {
     this.detectProjectType();
     this.setupInlineCompletions();
     return this;
+  }
+
+  async ensureCheckpointStoreReady() {
+    try {
+      await checkpointManager.setWorkspace(this.state.currentFolder || null);
+    } catch (err) {
+      console.warn("[Nova AI] No se pudo inicializar el almacén de checkpoints:", err);
+    }
   }
 
   render() {
@@ -939,16 +949,49 @@ HERRAMIENTAS DISPONIBLES
       .join("\n");
   }
 
+  pushInternalMessage(content, kind = "tool") {
+    this.messages.push({
+      id: generateId(),
+      role: kind,
+      content,
+      timestamp: Date.now(),
+    });
+  }
+
+  normalizeStoredMessages(messages = []) {
+    return messages.map((msg) => {
+      if (!msg || typeof msg !== "object") return msg;
+
+      const content = typeof msg.content === "string" ? msg.content : "";
+      const isLegacyInternalUserMessage =
+        msg.role === "user" &&
+        !msg.displayContent &&
+        (
+          content.startsWith("[Resultado de ") ||
+          content.startsWith("[Error en ") ||
+          content.startsWith("[Herramienta ") ||
+          content.startsWith("[Verificaci")
+        );
+
+      if (!isLegacyInternalUserMessage) return msg;
+      return {
+        ...msg,
+        role: "tool",
+      };
+    });
+  }
+
   buildConversationWindow(limit = 30) {
     // Keep all messages but truncate very long ones
     const msgs = this.messages.slice(-limit);
     return msgs.map((msg) => {
+      const apiRole = msg.role === "tool" ? "user" : msg.role;
       let content = typeof msg.content === "string"
         ? msg.content
         : JSON.stringify(msg.content);
 
       // Truncate extremely long tool results (file contents)
-      if (msg.role === "user" && content.startsWith("[Resultado de") && content.length > 15000) {
+      if (msg.role === "tool" && content.startsWith("[Resultado de") && content.length > 15000) {
         content = content.slice(0, 15000) + "\n...[truncado por longitud]";
       }
 
@@ -957,7 +1000,7 @@ HERRAMIENTAS DISPONIBLES
         content = content.slice(-20000);
       }
 
-      return { ...msg, content };
+      return { ...msg, role: apiRole, content };
     });
   }
 
@@ -971,17 +1014,34 @@ HERRAMIENTAS DISPONIBLES
     const text = input.value.trim();
     if (!text) return;
 
+    await this.ensureCheckpointStoreReady();
+
     input.value = "";
     input.style.height = "auto";
 
     const fullText = this.buildUserMessage(text);
-    this.messages.push({ role: "user", content: fullText });
-    this.appendMessage("user", text);
+    const userMessage = {
+      id: generateId(),
+      role: "user",
+      content: fullText,
+      displayContent: text,
+      checkpointId: null,
+      timestamp: Date.now(),
+    };
+    this.messages.push(userMessage);
+    const userEl = this.appendMessage(userMessage);
+    this._activeTurn = {
+      userMessageId: userMessage.id,
+      userMessageEl: userEl,
+      checkpointId: null,
+      startedAt: Date.now(),
+    };
 
     this.pendingContext = null;
     this.updateContextDisplay();
 
     await this.streamResponse(0);
+    this._activeTurn = null;
     this.saveConversation();
   }
 
@@ -1129,16 +1189,7 @@ HERRAMIENTAS DISPONIBLES
         this.abortController = null;
         this.isStreaming = false;
         this.updateUIState();
-
-        // Mostrar botón de restaurar si se hicieron cambios en archivos
-        if (this._currentCheckpointId) {
-          try {
-            this.addCheckpointRestoreButton(this._currentCheckpointId);
-          } catch (cpErr) {
-            this.appendSystemNote(`[Checkpoint error] ${cpErr.message}`);
-          }
-          this._currentCheckpointId = null;
-        }
+        this._currentCheckpointId = null;
       }
     }
   }
@@ -1542,10 +1593,7 @@ HERRAMIENTAS DISPONIBLES
       const ok = await this.requestConfirmation(tool, params, msg);
       if (!ok) {
         this.addToolStep(msgEl, "cancelled", tool, "Cancelado por el usuario");
-        this.messages.push({
-          role: "user",
-          content: `[Herramienta ${tool} cancelada por el usuario]`,
-        });
+        this.pushInternalMessage(`[Herramienta ${tool} cancelada por el usuario]`);
         return false;
       }
     }
@@ -1569,9 +1617,33 @@ HERRAMIENTAS DISPONIBLES
         if (destPath) checkpointManager.stageFile(destPath);
 
         if (!this._currentCheckpointId) {
+          const editorState = {
+            currentFile: this.state.currentFile,
+            openTabs: (this.state.openTabs || []).map((tab) => ({
+              path: tab.path,
+              content: tab.content,
+              saved: tab.saved,
+            })),
+          };
           this._currentCheckpointId = await checkpointManager.createCheckpoint(
-            `Antes de: ${this.describeAction(tool, params)}`
+            `Antes de: ${this.describeAction(tool, params)}`,
+            {
+              conversationId: this.activeConversation || "draft",
+              messageId: this._activeTurn?.userMessageId || null,
+              userText: this._activeTurn?.userMessageEl?.querySelector(".ai-msg-content")?.textContent || "",
+              editorState,
+            }
           );
+
+          if (this._activeTurn && this._currentCheckpointId) {
+            this._activeTurn.checkpointId = this._currentCheckpointId;
+            const userMsg = this.messages.find((msg) => msg.id === this._activeTurn.userMessageId);
+            if (userMsg) {
+              userMsg.checkpointId = this._currentCheckpointId;
+              userMsg.hasFileChanges = true;
+            }
+            this.attachRollbackActionToUserMessage(this._activeTurn.userMessageId, this._currentCheckpointId);
+          }
         } else {
           await checkpointManager.addToCheckpoint(
             this._currentCheckpointId, resolved, isDir ? 'directory' : 'file'
@@ -1591,7 +1663,7 @@ HERRAMIENTAS DISPONIBLES
         : this.state.currentFolder;
       if (!cwd) {
         this.addToolStep(msgEl, "error", tool, "No hay carpeta abierta.");
-        this.messages.push({ role: "user", content: `[Error en "run_command"]: No hay carpeta abierta.` });
+        this.pushInternalMessage(`[Error en "run_command"]: No hay carpeta abierta.`);
         return false;
       }
 
@@ -1630,13 +1702,13 @@ HERRAMIENTAS DISPONIBLES
           ? `Servidor ejecutándose en http://localhost:${r.port || "?"}`
           : [r.stdout && `stdout:\n${r.stdout}`, r.stderr && `stderr:\n${r.stderr}`, `exit: ${r.exitCode}`].filter(Boolean).join("\n");
         this.updateToolStep(stepEl, "done", tool, params);
-        this.messages.push({ role: "user", content: `[Resultado de "run_command"]\n${out}` });
+        this.pushInternalMessage(`[Resultado de "run_command"]\n${out}`);
         return true;
       } catch (err) {
         unlisten();
         unlistenPort?.();
         this.updateToolStep(stepEl, "error", tool, params);
-        this.messages.push({ role: "user", content: `[Error en "run_command"]: ${err.message}` });
+        this.pushInternalMessage(`[Error en "run_command"]: ${err.message}`);
         return false;
       }
     }
@@ -1657,10 +1729,9 @@ HERRAMIENTAS DISPONIBLES
       const result = await this.executeTool(tool, params);
       // Update the running step in place → no second row added
       this.updateToolStep(stepEl, "done", tool, params);
-      this.messages.push({
-        role: "user",
-        content: `[Resultado de "${tool}"]\n${typeof result === "string" ? result : JSON.stringify(result, null, 2)}`,
-      });
+      this.pushInternalMessage(
+        `[Resultado de "${tool}"]\n${typeof result === "string" ? result : JSON.stringify(result, null, 2)}`
+      );
 
       // ── Diff en chat (verde/rojo) + diff en editor (Monaco) ─────────────
       if (DIFF_TOOLS.has(tool) && params.path) {
@@ -1689,10 +1760,7 @@ HERRAMIENTAS DISPONIBLES
         if (this.isCodeLikeFile(fp)) {
           const diagnosticsSummary = this.collectEditorDiagnosticsSummary(fp);
           if (diagnosticsSummary) {
-            this.messages.push({
-              role: "user",
-              content: `[Verificación automática de "${params.path}"]\n${diagnosticsSummary}`,
-            });
+            this.pushInternalMessage(`[Verificaci�n autom�tica de "${params.path}"]` + "`n" + diagnosticsSummary);
             if (diagnosticsSummary.includes("[ERROR]")) {
               this.appendSystemNote(`Se detectaron errores en ${params.path}. El agente intentará corregirlos.`);
             }
@@ -1704,10 +1772,7 @@ HERRAMIENTAS DISPONIBLES
       return true;
     } catch (err) {
       this.updateToolStep(stepEl, "error", tool, params);
-      this.messages.push({
-        role: "user",
-        content: this.buildToolFailureFeedback(tool, params, err),
-      });
+      this.pushInternalMessage(this.buildToolFailureFeedback(tool, params, err));
       return false;
     }
   }
@@ -2387,16 +2452,31 @@ HERRAMIENTAS DISPONIBLES
   // UI DE MENSAJES
   // ==========================================================================
 
-  appendMessage(role, text, streaming = false) {
+  appendMessage(messageOrRole, text, streaming = false) {
     const welcome = this.container.querySelector(".ai-welcome");
     if (welcome) welcome.remove();
 
     const messages = this.container.querySelector("#ai-messages");
     const el = document.createElement("div");
+    const msg = typeof messageOrRole === "object"
+      ? messageOrRole
+      : { role: messageOrRole, content: text, displayContent: text };
+    const role = msg.role;
+    const displayText = role === "user" ? (msg.displayContent ?? msg.content ?? "") : (text ?? msg.content ?? "");
+
     el.className = `ai-msg ai-msg--${role}`;
+    if (msg.id) el.dataset.messageId = msg.id;
 
     if (role === "user") {
-      el.innerHTML = `<div class="ai-msg-bubble"><div class="ai-msg-content">${escapeHtml(text)}</div></div>`;
+      el.innerHTML = `
+        <div class="ai-msg-bubble">
+          <div class="ai-msg-content">${escapeHtml(displayText)}</div>
+          <div class="ai-msg-actions"></div>
+        </div>
+      `;
+      if (msg.checkpointId) {
+        this.attachRollbackActionToUserMessage(msg.id, msg.checkpointId, el);
+      }
     } else {
       el.innerHTML = `
         <div class="ai-msg-header">
@@ -2415,6 +2495,28 @@ HERRAMIENTAS DISPONIBLES
     messages.appendChild(el);
     this.scrollToBottom(true); // force: new message always scrolls
     return el;
+  }
+
+  attachRollbackActionToUserMessage(messageId, checkpointId, rootEl = null) {
+    if (!messageId || !checkpointId) return;
+    const el = rootEl || this.container.querySelector(`.ai-msg--user[data-message-id="${messageId}"]`);
+    if (!el) return;
+    const actions = el.querySelector(".ai-msg-actions");
+    if (!actions) return;
+
+    let btn = actions.querySelector(".ai-user-revert-btn");
+    if (!btn) {
+      btn = document.createElement("button");
+      btn.className = "ai-user-revert-btn";
+      btn.type = "button";
+      btn.textContent = "↩ Revertir";
+      actions.appendChild(btn);
+    }
+    btn.dataset.checkpointId = checkpointId;
+    btn.onclick = async () => {
+      if (btn.disabled) return;
+      await this.rollbackToUserMessage(messageId);
+    };
   }
 
   updateStreamingMessage(el, text) {
@@ -2526,122 +2628,119 @@ HERRAMIENTAS DISPONIBLES
     return step;
   }
 
-  /**
-   * Checkpoint card estilo Cursor: timeline, stats de líneas, colapsable.
-   */
-  addCheckpointRestoreButton(checkpointId) {
-    const cp = checkpointManager.getById(checkpointId);
-    if (!cp || !cp.entries?.length) return;
+  async rollbackToUserMessage(messageId) {
+    if (this.isStreaming) this.stopGeneration();
+    await this.ensureCheckpointStoreReady();
 
-    const messages = this.container.querySelector("#ai-messages");
-    const el = document.createElement("div");
-    el.className = "ai-checkpoint-bar";
-    el.dataset.checkpointId = checkpointId;
+    const targetIndex = this.messages.findIndex(
+      (msg) => msg.role === "user" && msg.id === messageId,
+    );
+    if (targetIndex < 0) return;
 
-    const relTime = (ts) => {
-      const s = (Date.now() - ts) / 1000;
-      if (s < 90) return "ahora mismo";
-      if (s < 3600) return `hace ${Math.floor(s / 60)} min`;
-      return `hace ${Math.floor(s / 3600)} h`;
-    };
+    const toRemove = this.messages.slice(targetIndex);
+    const checkpointIds = toRemove
+      .filter((msg) => msg.role === "user" && msg.checkpointId)
+      .map((msg) => msg.checkpointId)
+      .filter(Boolean)
+      .reverse();
 
-    // Filas de archivos con stats
-    const fileRows = cp.entries.map((e) => {
-      const name = e.path.split(/[\\/]/).pop();
-      const isDir = e.type === "directory";
-      const dotCls = isDir ? "ai-cp-file-dot--dir" : "";
-      let statsHtml = "";
-      if (e.stats) {
-        statsHtml = `<span class="ai-cp-stats"><span class="ai-cp-stat-add">+${e.stats.added}</span><span class="ai-cp-stat-del">−${e.stats.removed}</span></span>`;
-      } else if (isDir && e.files) {
-        statsHtml = `<span class="ai-cp-stat-dir">${e.files.length} arch.</span>`;
+    let lastEditorState = null;
+    const errors = [];
+
+    for (const checkpointId of checkpointIds) {
+      const cp = checkpointManager.getById(checkpointId);
+      if (cp?.meta?.editorState) lastEditorState = cp.meta.editorState;
+      try {
+        const result = await checkpointManager.restoreCheckpoint(checkpointId);
+        errors.push(...(result.errors || []));
+      } catch (err) {
+        errors.push(err.message);
       }
-      return `<div class="ai-cp-file-row">
-        <span class="ai-cp-file-dot ${dotCls}"></span>
-        <span class="ai-cp-file-name" title="${escapeHtml(e.path)}">${escapeHtml(name)}</span>
-        ${statsHtml}
-      </div>`;
-    }).join("");
-
-    const fileCount = cp.entries.length;
-    const subtitle = `${fileCount} ${fileCount === 1 ? "archivo" : "archivos"} · ${relTime(cp.timestamp)}`;
-
-    el.innerHTML = `
-      <div class="ai-cp-header">
-        <div class="ai-cp-left">
-          <svg class="ai-cp-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-          </svg>
-          <div class="ai-cp-info">
-            <span class="ai-cp-title">Checkpoint</span>
-            <span class="ai-cp-subtitle">${escapeHtml(subtitle)}</span>
-          </div>
-        </div>
-        <div class="ai-cp-actions">
-          <button class="ai-cp-toggle-btn" title="Ver archivos modificados">▾ Archivos</button>
-          <button class="ai-cp-restore-btn" title="Revertir todos los cambios">↩ Revertir</button>
-          <button class="ai-cp-accept-btn" title="Aceptar cambios">✓</button>
-        </div>
-      </div>
-      <div class="ai-cp-files-wrap" style="display:none">${fileRows}</div>
-    `;
-
-    if (!messages) return;
-
-    // Toggle archivo list
-    const toggleBtn = el.querySelector(".ai-cp-toggle-btn");
-    const restoreBtn = el.querySelector(".ai-cp-restore-btn");
-    const acceptBtn = el.querySelector(".ai-cp-accept-btn");
-    const wrap = el.querySelector(".ai-cp-files-wrap");
-
-    if (toggleBtn && wrap) {
-      toggleBtn.addEventListener("click", () => {
-        const opening = wrap.style.display === "none" || !wrap.style.display;
-        wrap.style.display = opening ? "flex" : "none";
-        toggleBtn.textContent = opening ? "▴" : "▾";
-      });
     }
 
-    if (acceptBtn) {
-      acceptBtn.addEventListener("click", () => {
-        el.classList.add("ai-cp-accepted");
-        setTimeout(() => el.remove(), 280);
-      });
+    if (lastEditorState) {
+      await this.restoreEditorState(lastEditorState);
     }
 
-    if (restoreBtn) {
-      restoreBtn.addEventListener("click", async () => {
-        restoreBtn.disabled = true;
-        restoreBtn.textContent = "…";
-        try {
-          const { restored, deleted, errors } = await checkpointManager.restoreCheckpoint(checkpointId);
-          for (const fp of restored) {
-            if (fp.includes("(directorio")) continue;
-            try {
-              const r = await window.api.agentReadFile(fp);
-              if (r?.success) this.syncEditorIfOpen(fp, r.content);
-            } catch {}
-          }
-          for (const fp of deleted) this.closeTabIfOpen(fp);
-          this.state.emit("refreshTree");
-
-          restoreBtn.textContent = "✓ Restaurado";
-          el.classList.add("ai-cp-restored");
-
-          const total = restored.length + deleted.length;
-          const errTxt = errors.length ? ` (${errors.length} error(es))` : "";
-          this.appendSystemNote(`✓ Checkpoint restaurado — ${total} elemento(s) revertido(s)${errTxt}`);
-          if (errors.length) errors.forEach(e => this.appendSystemNote(`  ⚠ ${e}`));
-        } catch (err) {
-          restoreBtn.disabled = false;
-          restoreBtn.textContent = "↩ Restaurar";
-          this.appendSystemNote(`Error al restaurar checkpoint: ${err.message}`);
-        }
-      });
+    const removedFilePaths = new Set();
+    for (const checkpointId of checkpointIds) {
+      const cp = checkpointManager.getById(checkpointId);
+      for (const entry of cp?.entries || []) {
+        removedFilePaths.add(entry.path);
+      }
     }
 
-    messages.appendChild(el);
-    this.scrollToBottom();
+    this.messages = this.messages.slice(0, targetIndex);
+    await checkpointManager.removeMany(checkpointIds);
+    this.renderMessages();
+
+    for (const fp of removedFilePaths) {
+      try {
+        const r = await window.api.agentReadFile(fp);
+        if (r?.success) this.syncEditorIfOpen(fp, r.content);
+        else this.closeTabIfOpen(fp);
+      } catch {
+        this.closeTabIfOpen(fp);
+      }
+    }
+
+    this.state.emit("refreshTree");
+    this.lastToolCallsHash = null;
+    this.repetitionCount = 0;
+    this.processedEarlyCalls = null;
+    this._activeTurn = null;
+
+    if (errors.length) {
+      this.appendSystemNote(`Rollback aplicado con ${errors.length} error(es) parciales.`);
+    } else {
+      this.appendSystemNote("Rollback aplicado. El chat y los archivos volvieron al estado previo.");
+    }
+
+    if (this.messages.length) this.saveConversation();
+    else this.newConversation();
+  }
+
+  async restoreEditorState(editorState) {
+    if (!editorState) return;
+
+    this.state.openTabs = (editorState.openTabs || []).map((tab) => ({
+      path: tab.path,
+      content: tab.content,
+      saved: tab.saved !== false,
+      model: null,
+    }));
+    this.state.currentFile = editorState.currentFile || this.state.openTabs[0]?.path || null;
+    this.state.emit("tabsChanged", this.state.openTabs);
+
+    if (this.state.currentFile) {
+      const tab = this.state.getTab(this.state.currentFile);
+      this.state.emit("fileOpened", {
+        filePath: this.state.currentFile,
+        content: tab?.content || "",
+      });
+    } else {
+      this.state.emit("editorClear");
+    }
+  }
+
+  renderMessages() {
+    const messagesEl = this.container.querySelector("#ai-messages");
+    if (!messagesEl) return;
+    messagesEl.innerHTML = "";
+
+    if (!this.messages.length) {
+      messagesEl.innerHTML = this.renderWelcome();
+      return;
+    }
+
+    this.messages.forEach((msg) => {
+      if (msg.role === "user") {
+        this.appendMessage(msg);
+      } else if (msg.role === "assistant") {
+        const el = this.appendMessage(msg);
+        this.finalizeMessage(el, this.stripToolCalls(msg.content));
+      }
+    });
   }
 
   appendSystemNote(msg) {
@@ -2709,7 +2808,13 @@ HERRAMIENTAS DISPONIBLES
 
   loadConversations() {
     try {
-      return JSON.parse(localStorage.getItem("ide_chat_history") || "[]");
+      const raw = JSON.parse(localStorage.getItem("ide_chat_history") || "[]");
+      return Array.isArray(raw)
+        ? raw.map((conv) => ({
+            ...conv,
+            messages: this.normalizeStoredMessages(conv.messages || []),
+          }))
+        : [];
     } catch {
       return [];
     }
@@ -2726,8 +2831,8 @@ HERRAMIENTAS DISPONIBLES
     if (!this.messages.length) return;
     const firstUser = this.messages.find((m) => m.role === "user");
     const title = firstUser
-      ? firstUser.content.slice(0, 60) +
-        (firstUser.content.length > 60 ? "..." : "")
+      ? (firstUser.displayContent || firstUser.content).slice(0, 60) +
+        ((firstUser.displayContent || firstUser.content).length > 60 ? "..." : "")
       : "Sin título";
     const conv = {
       id: this.activeConversation || generateId(),
@@ -2752,19 +2857,11 @@ HERRAMIENTAS DISPONIBLES
     const conv = this.conversations.find((c) => c.id === id);
     if (!conv) return;
     this.activeConversation = id;
-    this.messages = [...conv.messages];
+    this.messages = this.normalizeStoredMessages([...conv.messages]);
     this.activeModel = conv.model || this.activeModel;
     this.provider = conv.provider || "ollama";
 
-    const messagesEl = this.container.querySelector("#ai-messages");
-    messagesEl.innerHTML = "";
-    this.messages.forEach((msg) => {
-      if (msg.role === "user") this.appendMessage("user", msg.content);
-      else if (msg.role === "assistant") {
-        const el = this.appendMessage("assistant", "");
-        this.finalizeMessage(el, this.stripToolCalls(msg.content));
-      }
-    });
+    this.renderMessages();
 
     const provSel = this.container.querySelector("#ai-provider-select");
     const modSel = this.container.querySelector("#ai-model-select");
@@ -2790,6 +2887,7 @@ HERRAMIENTAS DISPONIBLES
     this.processedEarlyCalls = null;
     this.lastToolCallsHash = null;
     this.repetitionCount = 0;
+    this._activeTurn = null;
     this.container.querySelector("#ai-messages").innerHTML =
       this.renderWelcome();
     this.updateContextDisplay();
@@ -2823,18 +2921,20 @@ HERRAMIENTAS DISPONIBLES
     // Solo restaurar si hay carpeta abierta (la sesión tiene contexto de proyecto)
     if (!this.state.currentFolder) return;
     try {
+      await this.ensureCheckpointStoreReady();
       const sessionPath = this.state.currentFolder + "/.ide/session.json";
       const r = await window.api.agentReadFile(sessionPath);
       if (!r?.success) return;
       const session = JSON.parse(r.content);
       if (!session?.messages?.length) return;
-      this.messages = session.messages;
+      this.messages = this.normalizeStoredMessages(session.messages);
       if (session.mode) this.mode = session.mode;
       if (session.model) this.activeModel = session.model;
       if (session.provider) this.provider = session.provider;
       this.render();
       this.attachEventListeners();
       this.updateUIState();
+      this.renderMessages();
       this.switchTab("agent");
       this.appendSystemNote("Sesión anterior restaurada.");
     } catch {}
@@ -3288,3 +3388,5 @@ HERRAMIENTAS DISPONIBLES
 export function createAIAgent(container, state) {
   return new AIAgent({ container, state }).mount();
 }
+
+
