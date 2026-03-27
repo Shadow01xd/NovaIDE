@@ -138,6 +138,10 @@ html, body, #app { height: 100%; overflow: hidden; background: var(--bg1); color
   border-left: 3px solid #2ea043 !important;
   width: 100% !important;
 }
+.monaco-editor .editor-diff-line-del-anchor,
+.editor-diff-line-del-anchor {
+  border-left: 3px solid rgba(248, 81, 73, 0.95) !important;
+}
 .editor-diff-glyph-add::before {
   content: '+';
   color: #2ea043;

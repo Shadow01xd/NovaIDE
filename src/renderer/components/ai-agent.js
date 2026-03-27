@@ -1049,11 +1049,7 @@ HERRAMIENTAS DISPONIBLES
         }, 33);
       };
 
-      if (this.provider === "ollama")
-        await this.streamOllama(fullMessages, onToken, signal);
-      else if (this.provider === "groq")
-        await this.streamGroq(fullMessages, onToken, signal);
-      else await this.streamDeepSeek(fullMessages, onToken, signal);
+      await this.streamWithRecovery(fullMessages, onToken, signal);
 
       if (signal?.aborted) return;
 
@@ -1152,6 +1148,46 @@ HERRAMIENTAS DISPONIBLES
   // ==========================================================================
 
   // Ollama corre en localhost — fetch directo desde renderer funciona sin CORS
+  async streamWithRecovery(messages, onToken, signal) {
+    try {
+      if (this.provider === "ollama") {
+        await this.streamOllama(messages, onToken, signal);
+      } else if (this.provider === "groq") {
+        await this.streamGroq(messages, onToken, signal);
+      } else {
+        await this.streamDeepSeek(messages, onToken, signal);
+      }
+    } catch (err) {
+      if (signal?.aborted || !this.isTransientStreamError(err)) throw err;
+      this.appendSystemNote("Conexión inestable detectada. Reintentando la respuesta una vez…");
+      await new Promise((resolve) => setTimeout(resolve, 700));
+
+      if (this.provider === "ollama") {
+        await this.streamOllama(messages, onToken, signal);
+      } else if (this.provider === "groq") {
+        await this.streamGroq(messages, onToken, signal);
+      } else {
+        await this.streamDeepSeek(messages, onToken, signal);
+      }
+    }
+  }
+
+  isTransientStreamError(err) {
+    const message = String(err?.message || "").toLowerCase();
+    if (!message) return false;
+    if (message.includes("401") || message.includes("api key")) return false;
+    return [
+      "failed to fetch",
+      "fetch",
+      "network",
+      "timeout",
+      "socket",
+      "stream",
+      "econnrefused",
+      "connection",
+    ].some((token) => message.includes(token));
+  }
+
   async streamOllama(messages, onToken, signal) {
     const res = await fetch("http://localhost:11434/api/chat", {
       method: "POST",
@@ -1649,6 +1685,19 @@ HERRAMIENTAS DISPONIBLES
           const stats = this._computeChangeStats(oldContent ?? "", newContent ?? "");
           checkpointManager.setEntryStats(this._currentCheckpointId, fp, stats.added, stats.removed);
         }
+
+        if (this.isCodeLikeFile(fp)) {
+          const diagnosticsSummary = this.collectEditorDiagnosticsSummary(fp);
+          if (diagnosticsSummary) {
+            this.messages.push({
+              role: "user",
+              content: `[Verificación automática de "${params.path}"]\n${diagnosticsSummary}`,
+            });
+            if (diagnosticsSummary.includes("[ERROR]")) {
+              this.appendSystemNote(`Se detectaron errores en ${params.path}. El agente intentará corregirlos.`);
+            }
+          }
+        }
       }
       // ─────────────────────────────────────────────────────────────────────
 
@@ -1657,7 +1706,7 @@ HERRAMIENTAS DISPONIBLES
       this.updateToolStep(stepEl, "error", tool, params);
       this.messages.push({
         role: "user",
-        content: `[Error en "${tool}"]: ${err.message}`,
+        content: this.buildToolFailureFeedback(tool, params, err),
       });
       return false;
     }
@@ -1676,6 +1725,57 @@ HERRAMIENTAS DISPONIBLES
       else if (o !== n) { added++; removed++; }
     }
     return { added, removed };
+  }
+
+  isCodeLikeFile(filePath) {
+    if (!filePath) return false;
+    return /\.(js|jsx|ts|tsx|mjs|cjs|json|html|css|scss|sass|less|vue|svelte|py|java|cs|php|rb|go|rs|cpp|c|h|hpp|mdx?)$/i.test(filePath);
+  }
+
+  collectEditorDiagnosticsSummary(filePath) {
+    const ed = this.state.editorInstance;
+    if (!ed || !window.monaco) return null;
+    const model = ed.getModel();
+    if (!model) return null;
+    const currentPath = this.state.currentFile || "";
+    const norm = (p) => String(p || "").replace(/\\/g, "/").toLowerCase();
+    if (filePath && norm(currentPath) !== norm(filePath)) return null;
+
+    const markers = window.monaco.editor.getModelMarkers({ resource: model.uri });
+    if (!markers.length) {
+      return "Verificación automática: no se detectaron errores ni advertencias. ✓";
+    }
+
+    const summary = markers
+      .slice(0, 12)
+      .map((m) => {
+        const sev = m.severity === 8 ? "ERROR" : m.severity === 4 ? "WARNING" : "INFO";
+        return `[${sev}] L${m.startLineNumber}:C${m.startColumn} - ${m.message}`;
+      })
+      .join("\n");
+
+    const extra = markers.length > 12 ? `\n... ${markers.length - 12} diagnóstico(s) más` : "";
+    return `Verificación automática tras editar:\n${summary}${extra}`;
+  }
+
+  buildToolFailureFeedback(tool, params, err) {
+    const message = err?.message || "Error desconocido";
+    const path = params?.path || params?.source || "";
+    const target = path ? `\nArchivo objetivo: ${path}` : "";
+
+    if (tool === "apply_diff") {
+      return `[Error en "${tool}"]${target}\n${message}\n\nSiguiente acción recomendada: usa write_file con el contenido completo corregido. No repitas apply_diff con el mismo diff.`;
+    }
+
+    if (tool === "search_replace") {
+      return `[Error en "${tool}"]${target}\n${message}\n\nSiguiente acción recomendada: lee el archivo actual y usa el texto exacto para reemplazar, o cambia a write_file si el bloque es grande.`;
+    }
+
+    if (tool === "run_command") {
+      return `[Error en "${tool}"]\nComando: ${params?.command || "(vacío)"}\nCarpeta: ${params?.cwd || this.state.currentFolder || "(sin carpeta abierta)"}\n${message}\n\nSiguiente acción recomendada: revisa el error y corrige el comando o la carpeta antes de reintentar.`;
+    }
+
+    return `[Error en "${tool}"]${target}\n${message}`;
   }
 
   /** Genera un diff visual simple entre oldContent y newContent */
@@ -2933,8 +3033,12 @@ HERRAMIENTAS DISPONIBLES
     const ops = this._computeLineDiff(oldLines, newLines);
 
     const decorations = [];
+    const deletedMarkers = [];
     // Each entry: { afterLine (0=before line 1), texts[] }
     const delZones = [];
+    const lineCount = Math.max(model.getLineCount(), 1);
+    const minimapInline = window.monaco?.editor?.MinimapPosition?.Inline ?? 1;
+    const overviewLeft = window.monaco?.editor?.OverviewRulerLane?.Left ?? 1;
 
     let newLine = 0;      // 1-based current position in new content
     let pendingDels = [];
@@ -2942,6 +3046,10 @@ HERRAMIENTAS DISPONIBLES
     const flushDels = () => {
       if (pendingDels.length) {
         delZones.push({ afterLine: newLine, texts: [...pendingDels] });
+        deletedMarkers.push({
+          line: Math.min(Math.max(newLine || 1, 1), lineCount),
+          count: pendingDels.length,
+        });
         pendingDels = [];
       }
     };
@@ -2961,11 +3069,25 @@ HERRAMIENTAS DISPONIBLES
             isWholeLine: true,
             className: "editor-diff-line-add",
             glyphMarginClassName: "editor-diff-glyph-add",
+            minimap: { color: "#2ea043cc", position: minimapInline },
+            overviewRuler: { color: "#2ea043cc", position: overviewLeft },
           },
         });
       }
     }
     flushDels(); // trailing deletions
+
+    for (const marker of deletedMarkers) {
+      decorations.push({
+        range: new window.monaco.Range(marker.line, 1, marker.line, 1),
+        options: {
+          isWholeLine: false,
+          className: "editor-diff-line-del-anchor",
+          minimap: { color: "#f85149cc", position: minimapInline },
+          overviewRuler: { color: "#f85149cc", position: overviewLeft },
+        },
+      });
+    }
 
     // Apply line decorations
     if (this._editorDiffDecos) {
