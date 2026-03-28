@@ -1,4 +1,5 @@
 // src/renderer/components/file-manager.js
+import { iconThemeManager } from './IconThemeManager.js';
 /**
  * FileManager - Administrador de archivos mejorado para MyIDE
  * Creado con Vanilla JS, sin dependencias externas de UI
@@ -330,7 +331,14 @@ export class FileManager {
     // Icono
     const icon = document.createElement('span')
     icon.className = 'fm-icon'
-    icon.textContent = this.getIcon(item.name, item.isDirectory, item.expanded)
+    
+    // Use Icon Theme if available
+    const vscIconClass = iconThemeManager.getIconClass(item.name, item.isDirectory, item.expanded);
+    if (vscIconClass) {
+        icon.classList.add('vsc-icon', vscIconClass);
+    } else {
+        icon.textContent = this.getIcon(item.name, item.isDirectory, item.expanded)
+    }
     
     // Label
     const label = document.createElement('span')

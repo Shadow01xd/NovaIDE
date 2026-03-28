@@ -65,6 +65,10 @@ export class ThemeManager {
     return this.initPromise
   }
 
+  async refreshExtensions() {
+    await this._loadExtensionThemes();
+  }
+
   async _doInit() {
     try {
       // Esperar a que Monaco esté disponible
@@ -75,6 +79,9 @@ export class ThemeManager {
 
       // Cargar tema guardado o detectar del sistema
       await this._loadSavedTheme()
+
+      // Cargar temas de extensiones
+      await this._loadExtensionThemes()
 
       // Aplicar tema inicial
       this.applyTheme(this.currentTheme)
@@ -375,8 +382,82 @@ export class ThemeManager {
     // Aplicar nuevo tema
     document.documentElement.setAttribute('data-theme', themeId)
 
+    // Si es un tema de extensión, aplicar colores dinámicos
+    const theme = this.themes[themeId]
+    if (theme && theme.isExtension && theme.originalData && theme.originalData.colors) {
+      this._applyExtensionUIColors(theme.originalData.colors)
+    } else {
+      // Limpiar colores dinámicos si volvemos a un tema interno
+      this._clearExtensionUIColors()
+    }
+
     // Forzar reflow para asegurar aplicación inmediata
     document.documentElement.offsetHeight
+  }
+
+  _applyExtensionUIColors(colors) {
+    console.log('[ThemeManager] Applying extension UI colors:', colors)
+    let styleEl = document.getElementById('dynamic-theme-vars')
+    if (!styleEl) {
+      styleEl = document.createElement('style')
+      styleEl.id = 'dynamic-theme-vars'
+      document.head.appendChild(styleEl)
+    }
+
+    const mapping = {
+      // Editor core
+      '--editor-bg': colors['editor.background'],
+      '--editor-fg': colors['editor.foreground'],
+      '--editor-line-highlight': colors['editor.lineHighlightBackground'],
+      '--editor-selection': colors['editor.selectionBackground'],
+      
+      // UI backgrounds
+      '--ui-bg': colors['sideBar.background'] || colors['editorWidget.background'] || colors['activityBar.background'] || colors['editor.background'],
+      '--ui-bg-secondary': colors['list.hoverBackground'] || colors['editorGroupHeader.tabsBackground'] || colors['sideBarSectionHeader.background'],
+      '--ui-bg-tertiary': colors['list.activeSelectionBackground'] || colors['activityBar.activeBackground'] || colors['button.hoverBackground'],
+      
+      // Borders
+      '--ui-border': colors['sideBar.border'] || colors['editorGroup.border'] || colors['panel.border'] || colors['widget.border'] || colors['border'] || 'rgba(128, 128, 128, 0.35)',
+      '--ui-border-hover': colors['focusBorder'] || colors['button.background'],
+      
+      // Text
+      '--text-primary': colors['foreground'] || colors['editor.foreground'] || '#cccccc',
+      '--text-secondary': colors['descriptionForeground'] || colors['sideBar.foreground'] || '#999999',
+      '--text-tertiary': colors['disabledForeground'] || '#666666',
+      
+      // Accent
+      '--accent': colors['activityBarBadge.background'] || colors['button.background'] || colors['progressBar.background'] || '#007acc',
+      '--accent-hover': colors['button.hoverBackground'] || '#1e8acc',
+      
+      // Specific panels
+      '--sidebar-bg': colors['sideBar.background'] || colors['editorWidget.background'] || colors['editor.background'],
+      '--tab-bg': colors['tab.inactiveBackground'] || colors['editorGroupHeader.tabsBackground'],
+      '--tab-active': colors['tab.activeBackground'] || colors['editor.background'],
+      '--terminal-bg': colors['terminal.background'] || colors['editor.background'],
+      '--terminal-fg': colors['terminal.foreground'] || colors['editor.foreground'],
+      '--ai-bg': colors['editorWidget.background'] || colors['sideBar.background'] || colors['editor.background'],
+      '--ai-border': colors['sideBar.border'] || colors['editorGroup.border'] || 'rgba(128, 128, 128, 0.35)',
+    }
+
+    let css = ':root, [data-theme] {\n'
+    let count = 0
+    for (const [variable, value] of Object.entries(mapping)) {
+      if (value) {
+        css += `  ${variable}: ${value} !important;\n`
+        count++
+      }
+    }
+    css += '}'
+
+    console.log(`[ThemeManager] Injected ${count} CSS variables:`, css)
+    styleEl.textContent = css
+  }
+
+  _clearExtensionUIColors() {
+    const styleEl = document.getElementById('dynamic-theme-vars')
+    if (styleEl) {
+      styleEl.textContent = ''
+    }
   }
 
   /**
@@ -463,6 +544,107 @@ export class ThemeManager {
 
     this.applyTheme(nextTheme)
     return nextTheme
+  }
+
+  /**
+   * Carga temas desde las extensiones instaladas
+   */
+  async _loadExtensionThemes() {
+    try {
+      const contributions = await window.api.getExtensionContributions();
+      if (!contributions || !contributions.themes) return;
+
+      for (const themeInfo of contributions.themes) {
+        try {
+          const themeData = await window.api.readExtensionFile(themeInfo.path);
+          this._registerExtensionTheme(themeInfo, themeData);
+        } catch (e) {
+          console.error(`Error loading extension theme ${themeInfo.label}:`, e);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching extension contributions:', error);
+    } finally {
+      document.dispatchEvent(new CustomEvent('themes:updated'));
+    }
+  }
+
+  _registerExtensionTheme(info, data) {
+    const slugify = (text) => text.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    const themeId = `ext-${slugify(info.extensionId)}-${slugify(info.label)}`;
+    
+    // Evitar duplicados
+    if (this.themes[themeId]) return;
+
+    const monacoThemeName = `monaco-${themeId}`;
+    const monacoTheme = this._mapVSCodeToMonaco(data);
+    
+    // Registrar en Monaco
+    if (this.monacoReady) {
+        window.monaco.editor.defineTheme(monacoThemeName, monacoTheme);
+    }
+
+    this.themes[themeId] = {
+      id: themeId,
+      name: info.label,
+      icon: '🎨',
+      description: `Extension theme by ${info.publisher}`,
+      monacoTheme: monacoThemeName,
+      isExtension: true,
+      originalData: data
+    };
+    
+    // Si este era el tema guardado, lo aplicamos de nuevo ahora que está registrado
+    const savedTheme = localStorage.getItem(this.STORAGE_KEY);
+    if (savedTheme === themeId) {
+        this.applyTheme(themeId);
+    }
+  }
+
+  _mapVSCodeToMonaco(vsData) {
+    const base = vsData.type === 'light' ? 'vs' : (vsData.type === 'hc' ? 'hc-black' : 'vs-dark');
+    
+    const rules = [];
+    if (vsData.tokenColors && Array.isArray(vsData.tokenColors)) {
+      vsData.tokenColors.forEach(tc => {
+        const scopes = Array.isArray(tc.scope) ? tc.scope : [tc.scope];
+        const settings = tc.settings;
+        if (!settings) return;
+
+        scopes.forEach(scope => {
+          if (!scope) return;
+          rules.push({
+            token: this._mapScopeToToken(scope),
+            foreground: settings.foreground,
+            background: settings.background,
+            fontStyle: settings.fontStyle
+          });
+        });
+      });
+    }
+
+    return {
+      base: base,
+      inherit: true,
+      rules: rules,
+      colors: vsData.colors || {}
+    };
+  }
+
+  _mapScopeToToken(scope) {
+    // Mapeo básico de scopes de TextMate a tokens de Monaco
+    if (scope.includes('comment')) return 'comment';
+    if (scope.includes('string')) return 'string';
+    if (scope.includes('keyword')) return 'keyword';
+    if (scope.includes('number')) return 'number';
+    if (scope.includes('type')) return 'type';
+    if (scope.includes('function')) return 'function';
+    if (scope.includes('variable')) return 'variable';
+    if (scope.includes('constant')) return 'variable';
+    if (scope.includes('class')) return 'type';
+    if (scope.includes('interface')) return 'type';
+    if (scope.includes('punctuation')) return 'delimiter';
+    return '';
   }
 
   /**

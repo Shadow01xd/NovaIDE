@@ -1,5 +1,5 @@
 // src/main/main.js
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, net } = require('electron')
 const path = require('path')
 const fs   = require('fs')
 const os   = require('os')
@@ -73,8 +73,67 @@ async function createWindow() {
 }
 
 app.whenReady().then(() => {
+  const { protocol } = require('electron')
+  
+  // Register custom protocol to serve local resources safely from extensions
+  protocol.handle('ext-resource', async (request) => {
+    try {
+      const { readFile } = require('fs').promises
+      let decodedPath = decodeURIComponent(request.url.replace('ext-resource://', ''))
+      
+      // Handle Windows drive letters correctly (e.g., ext-resource://C:/ becomes C:/)
+      // Sometimes the colon is lost if C: is treated as host
+      if (process.platform === 'win32') {
+        if (decodedPath.startsWith('/')) decodedPath = decodedPath.substring(1);
+        if (/^[a-zA-Z]\//.test(decodedPath)) {
+          decodedPath = decodedPath[0] + ':' + decodedPath.substring(1);
+        }
+      }
+
+      const normalizedPath = path.resolve(decodedPath)
+      
+      console.log(`[Protocol] Loading: ${normalizedPath}`)
+      
+      if (!fs.existsSync(normalizedPath)) {
+        console.warn(`[Protocol] File not found: ${normalizedPath}`)
+        return new Response('Not found', { status: 404 })
+      }
+
+      const data = await readFile(normalizedPath)
+      const ext = path.extname(normalizedPath).toLowerCase()
+      const mimeTypes = {
+        '.svg': 'image/svg+xml',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif',
+        '.woff': 'font/woff',
+        '.woff2': 'font/woff2',
+        '.ttf': 'font/ttf',
+        '.otf': 'font/otf',
+        '.json': 'application/json',
+        '.css': 'text/css',
+        '.js': 'text/javascript',
+        '.mjs': 'text/javascript',
+        '.wasm': 'application/wasm'
+      }
+      
+      return new Response(data, {
+        headers: { 
+          'Content-Type': mimeTypes[ext] || 'application/octet-stream',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-cache'
+        }
+      })
+    } catch (e) {
+      console.error('[Protocol] Error:', e)
+      return new Response('Internal error', { status: 500 })
+    }
+  })
+
   createWindow()
   registerMarketplaceHandlers()
+  registerExtensionHandlers()
   registerLiveServerHandlers()
   registerPreviewWindowHandlers()
 })
@@ -122,7 +181,16 @@ function walkDir(dir, depth = 0) {
 
 ipcMain.handle('fs:readDir',    async (_, p) => walkDir(p))
 ipcMain.handle('fs:readDirSub', async (_, p) => walkDir(p))
-ipcMain.handle('fs:readFile',   async (_, p) => fs.readFileSync(p, 'utf-8'))
+ipcMain.handle('fs:readFile',    async (_, p, { startLine, endLine } = {}) => {
+  let content = fs.readFileSync(p, 'utf-8')
+  if (typeof startLine === 'number' || typeof endLine === 'number') {
+    const lines = content.split('\n')
+    const start = Math.max(0, (startLine || 1) - 1)
+    const end = endLine || lines.length
+    content = lines.slice(start, end).join('\n')
+  }
+  return content
+})
 ipcMain.handle('fs:exists',     async (_, p) => fs.existsSync(p))
 
 // ── AI Inline Completion (Universal) ──────────────────────────────────────────
@@ -591,9 +659,17 @@ ipcMain.handle('path:isAbsolute', (_, p) => path.isAbsolute(p))
 ipcMain.handle('path:dirname', (_, p) => path.dirname(p))
 ipcMain.handle('path:basename', (_, p) => path.basename(p))
 
-ipcMain.handle('agent:readFile', async (_, p) => {
+ipcMain.handle('agent:readFile', async (_, p, { startLine, endLine } = {}) => {
   try {
-    return { success: true, content: fs.readFileSync(p, 'utf-8') }
+    let content = fs.readFileSync(p, 'utf-8')
+    if (typeof startLine === 'number' || typeof endLine === 'number') {
+      const lines = content.split('\n')
+      const start = Math.max(0, (startLine || 1) - 1)
+      const end = endLine || lines.length
+      content = lines.slice(start, end).join('\n')
+      return { success: true, content, totalLines: lines.length, range: { startLine: start + 1, endLine: Math.min(end, lines.length) } }
+    }
+    return { success: true, content, totalLines: content.split('\n').length }
   } catch (e) {
     return { success: false, error: e.message }
   }
@@ -1046,6 +1122,34 @@ function registerMarketplaceHandlers() {
     console.log('[Main] Marketplace IPC handlers registered successfully')
   } catch (err) {
     console.error('[Main] Failed to register Marketplace handlers:', err)
+  }
+}
+
+let extensionManager;
+function registerExtensionHandlers() {
+  try {
+    const ExtensionManager = require('./extensions/extension-manager.js')
+    extensionManager = new ExtensionManager()
+
+    ipcMain.handle('extensions:getContributions', async () => {
+      return await extensionManager.getContributions()
+    })
+
+    ipcMain.handle('extensions:readExtensionFile', async (_, p) => {
+      return await extensionManager.readExtensionFile(p)
+    })
+
+    ipcMain.handle('extensions:format', async (_, { code, languageId }) => {
+      try {
+        return await extensionManager.format(code, languageId)
+      } catch (err) {
+        console.error('Formatting error:', err)
+        throw err
+      }
+    })
+    console.log('[Main] Extension handlers registered successfully')
+  } catch (err) {
+    console.error('[Main] Failed to register Extension handlers:', err)
   }
 }
 

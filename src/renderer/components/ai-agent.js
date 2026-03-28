@@ -139,6 +139,7 @@ export class AIAgent {
             </button>
           </div>
           <span class="ai-model-badge" id="ai-model-badge">${escapeHtml(this.activeModel)}</span>
+          <span class="ai-token-count" id="ai-token-count" title="Tokens aproximados en el contexto actual">0 tokens</span>
           <div class="ai-header-actions">
             <button class="ai-btn-icon" id="ai-btn-new-chat" title="Nueva conversación">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -718,24 +719,34 @@ PROTOCOLO DE EDICIÓN — CRÍTICO
 - No lo uses por defecto después de cada cambio
 
 ════════════════════════════════════════
+AHORRO DE TOKENS — CRÍTICO
+════════════════════════════════════════
+
+1. **Lectura parcial:** Para archivos grandes (> 300 líneas), usa \`read_file\` con \`start_line\` y \`end_line\`.
+2. **Edición mínima:** Prefiere \`search_replace\` o \`apply_diff\`. Evita \`write_file\` con el archivo completo si el cambio es menor al 30%.
+3. **No repitas:** Si ya leíste un archivo en este turno o el anterior, no lo vuelvas a leer.
+4. **Contexto selectivo:** Usa \`list_files\` y \`get_project_structure\` para orientarte antes de leer contenidos.
+
+════════════════════════════════════════
 REGLAS DE CÓDIGO
 ════════════════════════════════════════
 
-1. **Nunca asumas** el contenido de un archivo — léelo si no lo tienes en contexto
-2. **Código completo** — nunca dejes TODOs, "..." o partes incompletas
-3. **NUNCA uses create-react-app** — usa Vite o crea archivos manualmente
-4. **Si algo falla** — cambia de estrategia inmediatamente, no repitas la acción fallida
+1. **Nunca asumas** el contenido de un archivo — léelo si no lo tienes en contexto (usa rangos para archivos grandes).
+2. **Código completo** — nunca dejes TODOs, "..." o partes incompletas.
+3. **NUNCA uses create-react-app** — usa Vite o crea archivos manualmente.
+4. **Si algo falla** — cambia de estrategia inmediatamente, no repitas la acción fallida.
 5. **Completa la tarea eficientemente** — puedes usar múltiples herramientas en un solo turno si no dependen entre sí.
-6. **Responde en ESPAÑOL**, el código en inglés
+6. **Responde en ESPAÑOL**, el código en inglés.
 7. **Sé persistente** — no tengas miedo de realizar tareas complejas que requieran múltiples pasos.
-8. **Para cambios simples de texto** (año, versión, URL, color) → SIEMPRE usa search_replace
+8. **Para cambios simples de texto** (año, versión, URL, color) → SIEMPRE usa search_replace.
 
 ════════════════════════════════════════
 HERRAMIENTAS
 ════════════════════════════════════════
 
 📖 LECTURA:
-  read_file            {"tool":"read_file","params":{"path":"src/App.jsx"}}
+  read_file            {"tool":"read_file","params":{"path":"src/App.jsx", "start_line": 1, "end_line": 100}}
+                       → Lee rangos de líneas. ÚSALO para archivos grandes.
   read_multiple_files  {"tool":"read_multiple_files","params":{"paths":["a.js","b.js"]}}
   list_files           {"tool":"list_files","params":{"directory":"src"}}
   get_project_structure {"tool":"get_project_structure","params":{}}
@@ -1288,6 +1299,29 @@ HERRAMIENTAS DISPONIBLES
         } catch {}
       }
     }
+  }
+
+  async chat(messages) {
+    if (this.provider === "ollama") {
+      try {
+        return await window.api.aiChat(messages, this.activeModel);
+      } catch (err) {
+        console.warn("Ollama aiChat failed, falling back:", err);
+        throw err;
+      }
+    }
+    
+    // Para DeepSeek/Groq, usamos la infraestructura de streaming IPC 
+    // pero recolectamos todos los tokens en una promesa.
+    let fullText = "";
+    const onToken = (tok) => { fullText += tok; };
+    
+    if (this.provider === "deepseek") {
+      await this.streamDeepSeek(messages, onToken);
+    } else {
+      await this.streamGroq(messages, onToken);
+    }
+    return fullText;
   }
 
   // DeepSeek y Groq van por IPC (proceso principal) para evitar bloqueos CORS en Electron
@@ -2120,12 +2154,20 @@ HERRAMIENTAS DISPONIBLES
     switch (tool) {
       case "read_file": {
         const fp = resolve(params.path);
+        const opts = {};
+        if (typeof params.start_line === "number") opts.startLine = params.start_line;
+        if (typeof params.end_line === "number") opts.endLine = params.end_line;
+
         this.ensureWorkspacePath(
           fp,
           "No se puede leer fuera de la carpeta abierta.",
         );
-        const r = await window.api.agentReadFile(fp);
+        const r = await window.api.agentReadFile(fp, opts);
         if (!r.success) throw new Error(r.error);
+        
+        if (opts.startLine || opts.endLine) {
+          return `[Archivo: ${params.path}, Líneas ${r.range.startLine}-${r.range.endLine} de ${r.totalLines}]\n\n${r.content}`;
+        }
         return r.content;
       }
 
@@ -2755,6 +2797,7 @@ HERRAMIENTAS DISPONIBLES
         this.finalizeMessage(el, this.stripToolCalls(msg.content));
       }
     });
+    this.updateTokenCount();
   }
 
   appendSystemNote(msg) {
@@ -2775,6 +2818,19 @@ HERRAMIENTAS DISPONIBLES
     if (force || nearBottom) c.scrollTop = c.scrollHeight;
   }
 
+  updateTokenCount() {
+    const el = this.container.querySelector("#ai-token-count");
+    if (!el) return;
+    const tokens = estimateTokens(this.messages);
+    const limit = 32000;
+    const percent = Math.round((tokens / limit) * 100);
+    el.textContent = `${tokens.toLocaleString()} tokens (${percent}%)`;
+    
+    if (percent > 85) el.style.color = "var(--error)";
+    else if (percent > 65) el.style.color = "var(--warning)";
+    else el.style.color = "var(--text-tertiary)";
+  }
+
   async summarizeOldContext() {
     this.appendSystemNote("Comprimiendo contexto...");
     const toSummarize = this.messages.slice(0, -10);
@@ -2793,14 +2849,11 @@ HERRAMIENTAS DISPONIBLES
 
     let summary = "";
     try {
-      if (this.provider === "ollama") {
-        const res = await window.api.aiChat(summaryPrompt, this.activeModel);
-        summary = res;
-      } else {
-        summary = "Resumen automático de la conversación previa para ahorrar tokens.";
-      }
+      const res = await this.chat(summaryPrompt);
+      summary = res || "Resumen no disponible.";
 
       this.messages = [{ role: "assistant", content: `RESUMEN PREVIO: ${summary}` }, ...lastTen];
+      this.renderMessages();
     } catch (err) {
       console.warn("Error summarizing context:", err);
     }

@@ -11,6 +11,8 @@ const CATEGORIES = [
   { id: 'other', label: '🔧 Other', query: '', icon: '🔧' }
 ];
 
+import { themeManager } from './ThemeManager.js';
+
 export class ExtensionsPanel {
   constructor(container, state = {}) {
     this.container = container;
@@ -81,14 +83,14 @@ export class ExtensionsPanel {
               <input 
                 type="text" 
                 class="search-input" 
-                placeholder="Search extensions in VS Code Marketplace..."
+                placeholder="Search extensions (Themes, Languages, Snippets...)"
                 autocomplete="off"
               />
               <button class="search-clear" style="display: none;">×</button>
             </div>
             <div class="search-source">
-              <span>🛒</span>
-              <span>VS Code Marketplace</span>
+              <span class="source-icon">🛒</span>
+              <span>Visual Studio Marketplace</span>
             </div>
           </div>
         </div>
@@ -101,12 +103,15 @@ export class ExtensionsPanel {
                   class="category-btn ${cat.id === this.currentCategory ? 'active' : ''}" 
                   data-category="${cat.id}"
                 >
-                  <span class="category-label">${cat.label}</span>
+                  <span class="category-icon">${cat.icon}</span>
+                  <span class="category-label">${cat.label.replace(cat.icon, '').trim()}</span>
                 </button>
               `).join('')}
               <div class="category-separator"></div>
-              <button class="category-btn" data-category="installed">
-                <span class="category-label">Installed (<span class="installed-count">0</span>)</span>
+              <button class="category-btn ${this.currentCategory === 'installed' ? 'active' : ''}" data-category="installed">
+                <span class="category-icon">📦</span>
+                <span class="category-label">Installed</span>
+                <span class="installed-count">0</span>
               </button>
             </div>
           </div>
@@ -114,7 +119,7 @@ export class ExtensionsPanel {
           <div class="store-content">
             <div class="store-list-view" id="list-view">
               <div class="list-header">
-                <h2 class="list-title">Featured Extensions</h2>
+                <h2 class="list-title">Featured</h2>
                 <div class="list-stats">
                   <span class="extension-count">0 extensions</span>
                 </div>
@@ -123,21 +128,21 @@ export class ExtensionsPanel {
               <div class="extensions-grid" id="extensions-grid"></div>
 
               <div class="loading-skeleton" id="loading-skeleton" style="display: none;">
-                <div class="store-spinner" style="margin: 2rem auto; width: 40px; height: 40px; border: 4px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite;"></div>
-                <div style="text-align:center; color: var(--text2)">Loading...</div>
+                <div class="store-spinner" style="margin: 5rem auto; width: 48px; height: 48px; border: 4px solid var(--ui-border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;"></div>
+                <div style="text-align:center; color: var(--text-secondary); font-weight: 500;">Fetching from Marketplace...</div>
               </div>
 
               <div class="empty-state" id="empty-state" style="display: none;">
-                <div class="empty-icon">🔍</div>
+                <div class="empty-icon">📂</div>
                 <h3>No extensions found</h3>
-                <p>No results for "<span class="empty-query"></span>"</p>
-                <p>Try different keywords or browse categories</p>
+                <p>We couldn't find any results for "<span class="empty-query"></span>"</p>
+                <button class="store-btn store-btn--install" style="margin-top: 1rem" onclick="location.reload()">Clear Search</button>
               </div>
             </div>
 
             <div class="store-detail-view" id="detail-view" style="display: none;">
               <div class="detail-header">
-                <button class="back-btn">← Back to extensions</button>
+                <button class="back-btn">← Back</button>
               </div>
               <div class="detail-content" id="detail-content"></div>
             </div>
@@ -167,22 +172,24 @@ export class ExtensionsPanel {
   }
 
   attachEventListeners() {
-    this.elements.searchInput.addEventListener('input', this.handleSearch);
-    this.elements.searchClear.addEventListener('click', this.handleClearSearch);
+    if (this.elements.searchInput) this.elements.searchInput.addEventListener('input', (e) => this.handleSearch(e));
+    if (this.elements.searchClear) this.elements.searchClear.addEventListener('click', () => this.handleClearSearch());
     
     this.elements.categoryButtons.forEach(btn => {
-      btn.addEventListener('click', this.handleCategoryClick);
+      btn.addEventListener('click', (e) => this.handleCategoryClick(e));
     });
     
-    this.elements.backBtn.addEventListener('click', this.handleBackClick);
+    if (this.elements.backBtn) this.elements.backBtn.addEventListener('click', () => this.handleBackClick());
     
-    this.elements.extensionsGrid.addEventListener('click', this.handleExtensionClick);
-    this.elements.extensionsGrid.addEventListener('click', this.handleInstallClick);
+    if (this.elements.extensionsGrid) {
+        this.elements.extensionsGrid.addEventListener('click', (e) => this.handleExtensionClick(e));
+        this.elements.extensionsGrid.addEventListener('click', (e) => this.handleInstallClick(e));
+    }
   }
 
   handleSearch(event) {
     const query = event.target.value.trim();
-    this.elements.searchClear.style.display = query ? 'block' : 'none';
+    if (this.elements.searchClear) this.elements.searchClear.style.display = query ? 'block' : 'none';
     
     clearTimeout(this.searchTimeout);
     this.searchTimeout = setTimeout(() => {
@@ -198,7 +205,7 @@ export class ExtensionsPanel {
 
   handleClearSearch() {
     this.elements.searchInput.value = '';
-    this.elements.searchClear.style.display = 'none';
+    if (this.elements.searchClear) this.elements.searchClear.style.display = 'none';
     this.currentQuery = '';
     this.loadCategory(this.currentCategory);
   }
@@ -210,8 +217,8 @@ export class ExtensionsPanel {
     this.elements.categoryButtons.forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     
-    this.elements.searchInput.value = '';
-    this.elements.searchClear.style.display = 'none';
+    if (this.elements.searchInput) this.elements.searchInput.value = '';
+    if (this.elements.searchClear) this.elements.searchClear.style.display = 'none';
     this.currentQuery = '';
     
     this.loadCategory(category);
@@ -234,17 +241,15 @@ export class ExtensionsPanel {
     
     event.stopPropagation();
     const extensionId = btn.dataset.extensionId;
-    // Búsqueda en caché local 
     let extension = this.extensions.find(ext => ext._id === extensionId);
     
-    // Si no está en this.extensions, pero está instalada
     if (!extension && this.installedExtensions.has(extensionId)) {
         const info = this.installedExtensions.get(extensionId);
         extension = {
-            publisher: { publisherName: info.publisher },
+            publisher: { publisherName: info.publisher, displayName: info.publisher },
             extensionName: info.name,
-            versions: [{version: info.version}],
             displayName: info.name,
+            versions: [{version: info.version}],
             _id: extensionId
         };
     }
@@ -282,8 +287,6 @@ export class ExtensionsPanel {
     }
 
     this.setLoading(true);
-    
-    // Convert current installed map to UI format mimicking marketplace
     const exts = Array.from(this.installedExtensions.values()).map(info => {
        return {
            _id: info.id,
@@ -304,14 +307,11 @@ export class ExtensionsPanel {
     this.setLoading(true);
     try {
       const results = await window.api.marketplaceSearch(query);
-      
       const normalized = results.map(ext => {
           ext._id = `${ext.publisher.publisherName}.${ext.extensionName}`;
           return ext;
       });
-      
       this.setLoading(false);
-      
       if (normalized.length === 0) {
         this.showEmpty(query);
       } else {
@@ -329,33 +329,33 @@ export class ExtensionsPanel {
 
   setLoading(isLoading) {
     this.loading = isLoading;
-    this.elements.loadingSkeleton.style.display = isLoading ? 'block' : 'none';
-    this.elements.extensionsGrid.style.display = isLoading ? 'none' : 'grid';
-    this.elements.emptyState.style.display = 'none';
+    if (this.elements.loadingSkeleton) this.elements.loadingSkeleton.style.display = isLoading ? 'block' : 'none';
+    if (this.elements.extensionsGrid) this.elements.extensionsGrid.style.display = isLoading ? 'none' : 'grid';
+    if (this.elements.emptyState) this.elements.emptyState.style.display = 'none';
     if (!isLoading) {
-        this.elements.listView.style.display = 'block';
-        this.elements.detailView.style.display = 'none';
+        if (this.elements.listView) this.elements.listView.style.display = 'block';
+        if (this.elements.detailView) this.elements.detailView.style.display = 'none';
     }
   }
 
   showEmpty(query) {
-    this.elements.extensionsGrid.style.display = 'none';
-    this.elements.loadingSkeleton.style.display = 'none';
-    this.elements.emptyState.style.display = 'flex';
-    this.elements.emptyQuery.textContent = query || 'this category';
+    if (this.elements.extensionsGrid) this.elements.extensionsGrid.style.display = 'none';
+    if (this.elements.loadingSkeleton) this.elements.loadingSkeleton.style.display = 'none';
+    if (this.elements.emptyState) this.elements.emptyState.style.display = 'flex';
+    if (this.elements.emptyQuery) this.elements.emptyQuery.textContent = query || 'this category';
     this.updateExtensionCount(0);
   }
 
   renderExtensions(extensions) {
     this.extensions = extensions;
-    this.elements.extensionsGrid.innerHTML = '';
-    
-    extensions.forEach(extension => {
-      const card = this.createExtensionCard(extension);
-      this.elements.extensionsGrid.appendChild(card);
-    });
-    
-    this.elements.extensionsGrid.style.display = 'grid';
+    if (this.elements.extensionsGrid) {
+        this.elements.extensionsGrid.innerHTML = '';
+        extensions.forEach(extension => {
+          const card = this.createExtensionCard(extension);
+          this.elements.extensionsGrid.appendChild(card);
+        });
+        this.elements.extensionsGrid.style.display = 'grid';
+    }
     this.updateExtensionCount(extensions.length);
   }
 
@@ -363,6 +363,19 @@ export class ExtensionsPanel {
       if (!extension.statistics) return 0;
       const stat = extension.statistics.find(s => s.statisticName === name);
       return stat ? stat.value : 0;
+  }
+
+  async showDetailReal(publisher, name) {
+      this.setLoading(true);
+      try {
+          const extension = await window.api.marketplaceDetails(publisher, name);
+          extension._id = `${extension.publisher.publisherName}.${extension.extensionName}`;
+          this.setLoading(false);
+          this.showDetail(extension);
+      } catch (e) {
+          this.setLoading(false);
+          this.toast('Error loading extension details', true);
+      }
   }
 
   createExtensionCard(extension) {
@@ -385,53 +398,33 @@ export class ExtensionsPanel {
     
     card.innerHTML = `
       <div class="card-icon">
-        <img src="${iconUrl}" alt="" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-        <span class="fallback-icon">🔧</span>
+        <img src="${iconUrl}" alt="" onerror="this.src='https://raw.githubusercontent.com/microsoft/vscode/main/resources/linux/code.png';">
       </div>
       <div class="card-content">
         <div class="card-header">
-          <h3 class="card-name" title="${this.escape(extension.displayName)}">
-            ${this.escape(extension.displayName)}
-          </h3>
-          <div class="card-author" title="${this.escape(extension.publisher.publisherName)}">
-            ${this.escape(extension.publisher.displayName || extension.publisher.publisherName)}
-          </div>
+          <h3 class="card-name">${this.escape(extension.displayName)}</h3>
+          <div class="card-author">${this.escape(extension.publisher.displayName || extension.publisher.publisherName)}</div>
         </div>
-        <p class="card-description" title="${this.escape(extension.shortDescription)}">
-          ${this.escape(this.truncate(extension.shortDescription, 100))}
-        </p>
+        <p class="card-description">${this.escape(extension.shortDescription || 'No description available.')}</p>
         <div class="card-footer">
           <div class="card-stats">
             <span class="stat-item">
-              <span class="stat-icon">⬇</span>
+              <span class="stat-icon">📥</span>
               <span class="stat-value">${this.fmtNum(downloads)}</span>
             </span>
             <span class="stat-item">
               <span class="stat-icon">★</span>
-              <span class="stat-value">${rating.toFixed(1)}</span>
+              <span class="stat-value">${rating ? rating.toFixed(1) : 'N/A'}</span>
             </span>
           </div>
-          <button class="install-btn store-btn ${isInstalled ? 'store-btn--uninstall installed' : 'store-btn--install'}" data-extension-id="${id}">
-            ${isInstalled ? 'Uninstall' : 'Install'}
+          <button class="install-btn ${isInstalled ? 'installed' : ''}" data-extension-id="${id}">
+            ${isInstalled ? 'Installed' : 'Install'}
           </button>
         </div>
       </div>
     `;
     
     return card;
-  }
-
-  async showDetailReal(publisher, name) {
-      this.setLoading(true);
-      try {
-          const extension = await window.api.marketplaceDetails(publisher, name);
-          extension._id = `${extension.publisher.publisherName}.${extension.extensionName}`;
-          this.setLoading(false);
-          this.showDetail(extension);
-      } catch (e) {
-          this.setLoading(false);
-          this.toast('Error loading extension details', true);
-      }
   }
 
   showDetail(extension) {
@@ -453,38 +446,37 @@ export class ExtensionsPanel {
     this.elements.detailContent.innerHTML = `
       <div class="detail-hero">
         <div class="detail-icon">
-          <img src="${iconUrl}" alt="" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" style="width:72px; height:72px;">
-          <span class="fallback-icon">🔧</span>
+          <img src="${iconUrl}" alt="" onerror="this.src='https://raw.githubusercontent.com/microsoft/vscode/main/resources/linux/code.png';">
         </div>
         <div class="detail-info">
           <h1 class="detail-name">${this.escape(extension.displayName)}</h1>
           <div class="detail-meta">
             <span class="detail-author">by ${this.escape(extension.publisher.displayName || extension.publisher.publisherName)}</span>
-            <span class="detail-separator">•</span>
+            <span class="detail-separator"></span>
             <span class="detail-version">v${versionStr}</span>
-            <span class="detail-separator">•</span>
-            <span class="detail-rating">★ ${rating.toFixed(1)}</span>
-            <span class="detail-separator">•</span>
-            <span class="detail-downloads">⬇ ${this.fmtNum(downloads)}</span>
+            <span class="detail-separator"></span>
+            <span class="detail-rating">★ ${rating ? rating.toFixed(1) : 'N/A'}</span>
+            <span class="detail-separator"></span>
+            <span class="detail-downloads">${this.fmtNum(downloads)} installs</span>
           </div>
         </div>
       </div>
       
-      <div class="detail-actions" style="margin: 1rem 0;">
-        <button class="detail-install-btn store-btn ${isInstalled ? 'store-btn--uninstall installed' : 'store-btn--install'}" data-extension-id="${id}">
-          ${isInstalled ? '🗑️ Uninstall' : '⬇️ Install'}
+      <div class="detail-actions">
+        <button class="detail-install-btn ${isInstalled ? 'installed' : ''}" data-extension-id="${id}">
+          ${isInstalled ? '🗑️ Uninstall' : '📥 Install Extension'}
         </button>
       </div>
       
       <div class="detail-description">
-        <p>${this.escape(extension.shortDescription)}</p>
+        <p>${this.escape(extension.shortDescription || '')}</p>
       </div>
       
       ${extension.readmeContent ? `
-        <div class="detail-readme" style="margin-top: 2rem; border-top: 1px solid var(--border); padding-top: 1rem;">
-          <h2>README</h2>
-          <div class="readme-content" style="max-height: 50vh; overflow-y: auto; padding: 1rem; background: var(--bg2); border-radius: 4px;">
-            ${extension.readmeContent} <!-- Note: typically you need a Markdown parser here. -->
+        <div class="detail-readme">
+          <h2>Overview</h2>
+          <div class="readme-content">
+            ${extension.readmeContent}
           </div>
         </div>
       ` : ''}
@@ -539,6 +531,11 @@ export class ExtensionsPanel {
         // Refrescar si estamos en "installed"
         if (this.currentCategory === 'installed') this.showInstalled();
         
+        // REFRESCAR TODOS LOS MANAGERS
+        if (window.__themeManager) window.__themeManager.refreshExtensions();
+        if (window.__snippetManager) window.__snippetManager.refresh();
+        if (window.__iconThemeManager) window.__iconThemeManager.init(); // Reload icons
+        
       } catch (error) {
         console.error(error);
         button.textContent = '🗑️ Uninstall';
@@ -573,6 +570,11 @@ export class ExtensionsPanel {
         }
         
         this.toast(`✓ ${extension.displayName} installed successfully`);
+        
+        // REFRESCAR TODOS LOS MANAGERS
+        if (window.__themeManager) window.__themeManager.refreshExtensions();
+        if (window.__snippetManager) window.__snippetManager.refresh();
+        if (window.__iconThemeManager) window.__iconThemeManager.init(); // Reload icons
       } catch (error) {
         console.error(error);
         button.textContent = 'Install';

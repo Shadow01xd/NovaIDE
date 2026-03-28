@@ -15,8 +15,8 @@ export function estimateTokens(messages) {
     totalChars += 20; 
   }
   
-  // Rule of thumb: ~4 characters per token
-  return Math.ceil(totalChars / 4);
+  // Rule of thumb: ~3.5 characters per token for code-heavy context
+  return Math.ceil(totalChars / 3.5);
 }
 
 export function isContextFull(messages, limit = 32000, threshold = 0.8) {

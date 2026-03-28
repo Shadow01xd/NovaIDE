@@ -24,11 +24,15 @@ export class ThemeSelector {
     this.updateCurrentTheme()
     
     this.themeManager.addThemeChangeListener((themeId, theme) => {
-      this.updateCurrentTheme()
       if (this.onThemeChange) {
         this.onThemeChange(themeId, theme)
       }
     })
+
+    document.addEventListener('themes:updated', () => {
+      this.createThemeList();
+      this.updateCurrentTheme();
+    });
   }
 
   createSelector() {
@@ -112,6 +116,17 @@ export class ThemeSelector {
         bg: '#000000',
         fg: '#ffff00',
         accent: '#1e90ff'
+      }
+    }
+    
+    // Fallback for extension themes
+    if (themeId && themeId.startsWith('ext-')) {
+      const theme = this.themeManager.themes[themeId];
+      const data = theme?.originalData;
+      if (data && data.colors) {
+        if (type === 'bg') return data.colors['editor.background'] || '#1e1e1e';
+        if (type === 'fg') return data.colors['editor.foreground'] || '#cccccc';
+        if (type === 'accent') return data.colors['activityBar.background'] || data.colors['button.background'] || '#007acc';
       }
     }
     

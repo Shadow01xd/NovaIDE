@@ -13,7 +13,7 @@ contextBridge.exposeInMainWorld('api', {
   confirmDialog: (msg, detail) => ipcRenderer.invoke('dialog:confirm', msg, detail),
   readDir:       (p)       => ipcRenderer.invoke('fs:readDir', p),
   readDirSub:    (p)       => ipcRenderer.invoke('fs:readDirSub', p),
-  readFile:      (p)       => ipcRenderer.invoke('fs:readFile', p),
+  readFile:      (p, opts)  => ipcRenderer.invoke('fs:readFile', p, opts),
   saveFile:      (p, c)    => ipcRenderer.invoke('fs:saveFile', p, c),
   copyFile:      (s, d)    => ipcRenderer.invoke('fs:copyFile', s, d),
   stat:          (p)       => ipcRenderer.invoke('fs:stat', p),
@@ -67,7 +67,7 @@ contextBridge.exposeInMainWorld('api', {
   setSettings: (d)   => ipcRenderer.invoke('settings:set', d),
 
   // AI Agent Tools (consolidated - use these instead of fs:* for agent operations)
-  agentReadFile:            (p)         => ipcRenderer.invoke('agent:readFile', p),
+  agentReadFile:            (p, opts)   => ipcRenderer.invoke('agent:readFile', p, opts),
   agentWriteFile:           (p, c)      => ipcRenderer.invoke('agent:writeFile', p, c),
   agentCreateFile:          (p, c)      => ipcRenderer.invoke('agent:createFile', p, c),
   agentDeleteFile:          (p)         => ipcRenderer.invoke('agent:deleteFile', p),
@@ -131,4 +131,9 @@ contextBridge.exposeInMainWorld('api', {
 
   // Project root notification
   sendProjectRoot: (rootPath) => ipcRenderer.send('project:root-changed', rootPath),
+
+  // Extensions Activation
+  getExtensionContributions: () => ipcRenderer.invoke('extensions:getContributions'),
+  readExtensionFile: (p) => ipcRenderer.invoke('extensions:readExtensionFile', p),
+  formatCode: (code, lang) => ipcRenderer.invoke('extensions:format', { code, languageId: lang }),
 })

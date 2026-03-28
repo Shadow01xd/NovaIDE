@@ -8,8 +8,9 @@ import { createTerminalPanel } from './components/terminal.js'
 import { createStatusBar }     from './components/statusbar.js'
 import { createExtensionsPanel } from './components/ExtensionsPanel.js'
 import { DragAndDropManager }  from './components/drag-drop.js'
-// Importar sistema de temas
 import { themeManager }        from './components/ThemeManager.js'
+import { iconThemeManager }   from './components/IconThemeManager.js'
+import { SnippetManager }     from './components/SnippetManager.js'
 import { createThemeSelectorPopup } from './components/ThemeSelectorPopup.js'
 import { createPreviewUrlPopup } from './components/PreviewUrlPopup.js'
 import { createHistoryTimeline } from './components/history-timeline.js'
@@ -75,8 +76,9 @@ function buildWelcome() {
   `
 }
 
-// ── Inicializar sistema de temas ─────────────────────────────────────────────
+// ── Inicializar sistema de temas e iconos ────────────────────────────────────
 await themeManager.init()
+await iconThemeManager.init()
 
 // ── Inicializar componentes ──────────────────────────────────────────────────
 const sidebarElement = document.getElementById('sidebar')
@@ -88,6 +90,12 @@ const themePopup = createThemeSelectorPopup(themeManager)
 createTabs(document.getElementById('tabs'), state)
 const editor = await createEditor(document.getElementById('editor'), state, themeManager)
 window.__editorInstance = editor
+
+// Snippets
+const snippetManager = new SnippetManager(window.monaco)
+await snippetManager.init()
+window.__snippetManager = snippetManager
+
 createAIAgent(document.getElementById('ai-panel'), state)
 createStatusBar(document.getElementById('statusbar'), state)
 const previewUrlPopup = createPreviewUrlPopup(state)
@@ -578,3 +586,5 @@ themeManager.setupKeyboardShortcuts()
 
 // ── Exponer ThemeManager globalmente para acceso desde otros componentes ─────────────
 window.__themeManager = themeManager
+window.__iconThemeManager = iconThemeManager
+window.__snippetManager = snippetManager

@@ -1,5 +1,6 @@
 import { registerAllLanguages } from './language-extensions.js'
 import { historyManager } from '../utils/history-manager.js'
+import { SnippetManager } from './SnippetManager.js'
 
 const LANG_MAP = {
   // Lenguajes Web - Monaco nativos
@@ -1490,6 +1491,8 @@ export async function createEditor(container, state, themeMgr = null) {
   const monaco = window.monaco
   state.monacoRef = monaco
   
+  const snippetManager = new SnippetManager(monaco);
+  await snippetManager.init();
   // Guardar referencia al ThemeManager
   themeManager = themeMgr
 
