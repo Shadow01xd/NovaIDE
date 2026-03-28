@@ -118,6 +118,29 @@ export function createTerminalPanel(container, state) {
       console.warn('Addons no disponibles:', e)
     }
 
+    xterm.attachCustomKeyEventHandler((e) => {
+      const mod = e.ctrlKey || e.metaKey;
+      const isTermKey = ['`', 'ñ', 'Ñ', ']', ';', '}'].includes(e.key) || ['Backquote', 'Semicolon', 'BracketRight'].includes(e.code);
+      if (mod && isTermKey) {
+        if (e.type === 'keydown') {
+          state.terminalOpen = false;
+          state.emit('panelToggle', { panel: 'terminal', open: false });
+        }
+        return false;
+      }
+      
+      // Smart Ctrl+C: Copiar si hay texto, matar proceso si no hay texto
+      if (mod && e.code === 'KeyC' && e.type === 'keydown') {
+        if (xterm.hasSelection()) {
+          navigator.clipboard.writeText(xterm.getSelection());
+          xterm.clearSelection();
+          return false; // Evita enviar Ctrl+C (\x03) al servidor
+        }
+      }
+      
+      return true;
+    });
+
     xterm.open(termEl)
     try { fitAddon?.fit() } catch {}
 
@@ -174,7 +197,12 @@ export function createTerminalPanel(container, state) {
     delete terminals[activeTermId]
     const remaining = Object.keys(terminals)
     activeTermId = null
-    if (remaining.length > 0) switchTo(Number(remaining[remaining.length - 1]))
+    if (remaining.length > 0) {
+      switchTo(Number(remaining[remaining.length - 1]))
+    } else {
+      state.terminalOpen = false
+      state.emit('panelToggle', { panel: 'terminal', open: false })
+    }
   })
 
   document.getElementById('btn-close-termbar').addEventListener('click', () => {
@@ -184,4 +212,37 @@ export function createTerminalPanel(container, state) {
 
   // Crear la primera terminal automáticamente
   newTerminal()
+
+  // ── Escuchar comandos externos (ej. desde AI Agent) ────────────────────────
+  state.on('terminal:run', async ({ command, cwd }) => {
+    state.terminalOpen = true
+    document.getElementById('terminal').style.display = 'flex'
+    state.emit('panelToggle', { panel: 'terminal', open: true })
+
+    if (activeTermId === null) {
+      await newTerminal()
+      // Esperar un poco a que el shell inicial de node-pty esté listo
+      setTimeout(() => {
+        if (activeTermId) window.api.termWrite(activeTermId, command + '\r')
+      }, 800)
+    } else {
+      window.api.termWrite(activeTermId, command + '\r')
+    }
+  })
+
+  // Reiniciar la terminal limpiamente al confirmar que el proyecto entero ha cambiado
+  state.on('projectFolderChanged', async () => {
+    const existingIds = Object.keys(terminals)
+    if (existingIds.length === 0) return
+
+    for (const tid of existingIds) {
+      await window.api.termKill(tid)
+      terminals[tid]?.xterm?.dispose()
+      terminals[tid]?.container?.remove()
+      document.querySelector(`.term-tab[data-id="${tid}"]`)?.remove()
+      delete terminals[tid]
+    }
+    activeTermId = null
+    newTerminal()
+  })
 }

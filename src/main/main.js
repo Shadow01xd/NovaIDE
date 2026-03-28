@@ -1163,7 +1163,8 @@ if (!fs.existsSync(HISTORY_DIR)) fs.mkdirSync(HISTORY_DIR, { recursive: true })
 
 function getHistoryPath(filePath) {
   const crypto = require('crypto')
-  const hash = crypto.createHash('md5').update(filePath).digest('hex')
+  const dataString = typeof filePath === 'string' ? filePath : JSON.stringify(filePath)
+  const hash = crypto.createHash('md5').update(dataString).digest('hex')
   return path.join(HISTORY_DIR, `${hash}.json`)
 }
 

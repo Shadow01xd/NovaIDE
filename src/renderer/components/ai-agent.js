@@ -71,7 +71,9 @@ export class AIAgent {
     this.activeTab = "agent";
     this.activeModel = state.aiModel || "deepseek-coder";
     this.provider = localStorage.getItem("ide_provider") || "ollama";
-    this.deepseekApiKey = (localStorage.getItem("ide_deepseek_key") || "").trim();
+    this.deepseekApiKey = (
+      localStorage.getItem("ide_deepseek_key") || ""
+    ).trim();
     this.groqApiKey = (localStorage.getItem("ide_groq_key") || "").trim();
     this.activeConversation = null;
     this.isStreaming = false;
@@ -113,7 +115,10 @@ export class AIAgent {
     try {
       await checkpointManager.setWorkspace(this.state.currentFolder || null);
     } catch (err) {
-      console.warn("[Nova AI] No se pudo inicializar el almacén de checkpoints:", err);
+      console.warn(
+        "[Nova AI] No se pudo inicializar el almacén de checkpoints:",
+        err,
+      );
     }
   }
 
@@ -247,9 +252,11 @@ export class AIAgent {
         <div class="ai-welcome-logo">✦</div>
         <h2 class="ai-welcome-title">Nova AI</h2>
         <p class="ai-welcome-subtitle">
-          ${projectName
-            ? `Proyecto: <strong>${escapeHtml(projectName)}</strong>${this.projectType ? ` · ${escapeHtml(this.projectType)}` : ""}`
-            : "Agente de programación con acceso completo al proyecto"}
+          ${
+            projectName
+              ? `Proyecto: <strong>${escapeHtml(projectName)}</strong>${this.projectType ? ` · ${escapeHtml(this.projectType)}` : ""}`
+              : "Agente de programación con acceso completo al proyecto"
+          }
         </p>
         <div class="ai-suggestions">
           <button class="ai-suggestion-btn" data-prompt="Analiza la estructura del proyecto y explica cómo está organizado">Analizar proyecto</button>
@@ -316,10 +323,15 @@ export class AIAgent {
         if (newMode === this.mode) return;
         this.mode = newMode;
         localStorage.setItem("ide_agent_mode", this.mode);
-        this.container.querySelectorAll(".ai-mode-btn").forEach((b) =>
-          b.classList.toggle("active", b.dataset.mode === this.mode)
-        );
-        const labels = { simple: "⚡ Modo Simple", planner: "📋 Modo Planificador" };
+        this.container
+          .querySelectorAll(".ai-mode-btn")
+          .forEach((b) =>
+            b.classList.toggle("active", b.dataset.mode === this.mode),
+          );
+        const labels = {
+          simple: "⚡ Modo Simple",
+          planner: "📋 Modo Planificador",
+        };
         this.showStatus(labels[this.mode] || this.mode, "info");
       });
 
@@ -389,7 +401,7 @@ export class AIAgent {
         const val = parseInt(e.target.value);
         if (val >= 5 && val <= 100) {
           this.state.settings.maxIterations = val;
-          this.state.emit('settingsChanged', this.state.settings);
+          this.state.emit("settingsChanged", this.state.settings);
         }
       });
 
@@ -671,7 +683,8 @@ Si el usuario pide código, dalo listo para usar, sin omitir partes importantes.
 
     const folder = this.state.currentFolder || "(ninguna)";
     const file = this.state.currentFile || "(ninguno)";
-    const projectName = folder !== "(ninguna)" ? folder.split(/[\\/]/).pop() : null;
+    const projectName =
+      folder !== "(ninguna)" ? folder.split(/[\\/]/).pop() : null;
 
     // Detectar tipo de proyecto
     let projectHint = "";
@@ -799,8 +812,9 @@ REGLAS CRÍTICAS:
     if (editor && file && file !== "(ninguno)") {
       const content = editor.getValue();
       const lang = file.split(".").pop() || "text";
-      const sel = editor.getModel()?.getValueInRange(editor.getSelection()) || "";
-      const lineCount = content.split('\n').length;
+      const sel =
+        editor.getModel()?.getValueInRange(editor.getSelection()) || "";
+      const lineCount = content.split("\n").length;
 
       prompt += `\n\n════════════════════════════════════════\nARCHIVO ACTIVO EN EL EDITOR\n════════════════════════════════════════`;
       prompt += `\nPath: ${file}`;
@@ -813,7 +827,7 @@ REGLAS CRÍTICAS:
       if (content.length < 8000) {
         prompt += `\n\n⚠️ CONTENIDO COMPLETO YA DISPONIBLE — NO uses read_file para este archivo, ya lo tienes aquí:\n\`\`\`${lang}\n${content}\n\`\`\``;
       } else {
-        prompt += `\n\n⚠️ Archivo grande (${lineCount} líneas, ${Math.round(content.length/1024)}KB) — usa read_file si necesitas el contenido completo para editar.`;
+        prompt += `\n\n⚠️ Archivo grande (${lineCount} líneas, ${Math.round(content.length / 1024)}KB) — usa read_file si necesitas el contenido completo para editar.`;
       }
     }
 
@@ -823,8 +837,11 @@ REGLAS CRÍTICAS:
   buildPlannerPrompt() {
     const folder = this.state.currentFolder || "(ninguna)";
     const file = this.state.currentFile || "(ninguno)";
-    const projectName = folder !== "(ninguna)" ? folder.split(/[\\/]/).pop() : null;
-    const projectHint = this.projectType ? `\nTipo de proyecto: ${this.projectType}` : "";
+    const projectName =
+      folder !== "(ninguna)" ? folder.split(/[\\/]/).pop() : null;
+    const projectHint = this.projectType
+      ? `\nTipo de proyecto: ${this.projectType}`
+      : "";
 
     const editor = this.state.editorInstance;
     let editorCtx = "";
@@ -833,7 +850,8 @@ REGLAS CRÍTICAS:
       const lang = file.split(".").pop() || "text";
       const lineCount = content.split("\n").length;
       editorCtx = `\n\n════════════════════════════════════════\nARCHIVO ACTIVO: ${file} (${lang}, ${lineCount} líneas)\n════════════════════════════════════════`;
-      if (content.length < 5000) editorCtx += `\n\`\`\`${lang}\n${content}\n\`\`\``;
+      if (content.length < 5000)
+        editorCtx += `\n\`\`\`${lang}\n${content}\n\`\`\``;
       else editorCtx += `\n(archivo grande — usa read_file para verlo)`;
     }
 
@@ -918,7 +936,7 @@ HERRAMIENTAS DISPONIBLES
     if (!this.state.currentFolder || this.projectType) return;
     try {
       const r = await window.api.agentReadFile(
-        this.state.currentFolder + "/package.json"
+        this.state.currentFolder + "/package.json",
       );
       if (r.success) {
         const pkg = JSON.parse(r.content);
@@ -928,7 +946,8 @@ HERRAMIENTAS DISPONIBLES
         else if (deps.svelte) this.projectType = "Svelte";
         else if (deps.next) this.projectType = "Next.js";
         else if (deps.nuxt) this.projectType = "Nuxt";
-        else if (deps.express || deps.fastify || deps.koa) this.projectType = "Node.js Backend";
+        else if (deps.express || deps.fastify || deps.koa)
+          this.projectType = "Node.js Backend";
         else this.projectType = "Node.js";
       }
     } catch {
@@ -936,11 +955,13 @@ HERRAMIENTAS DISPONIBLES
       try {
         const r = await window.api.agentListFiles(this.state.currentFolder);
         if (r.success) {
-          const names = r.files.map(f => f.name);
-          if (names.includes("requirements.txt") || names.includes("setup.py")) this.projectType = "Python";
+          const names = r.files.map((f) => f.name);
+          if (names.includes("requirements.txt") || names.includes("setup.py"))
+            this.projectType = "Python";
           else if (names.includes("Cargo.toml")) this.projectType = "Rust";
           else if (names.includes("go.mod")) this.projectType = "Go";
-          else if (names.includes("pom.xml") || names.includes("build.gradle")) this.projectType = "Java";
+          else if (names.includes("pom.xml") || names.includes("build.gradle"))
+            this.projectType = "Java";
         }
       } catch {}
     }
@@ -991,12 +1012,10 @@ HERRAMIENTAS DISPONIBLES
       const isLegacyInternalUserMessage =
         msg.role === "user" &&
         !msg.displayContent &&
-        (
-          content.startsWith("[Resultado de ") ||
+        (content.startsWith("[Resultado de ") ||
           content.startsWith("[Error en ") ||
           content.startsWith("[Herramienta ") ||
-          content.startsWith("[Verificaci")
-        );
+          content.startsWith("[Verificaci"));
 
       if (!isLegacyInternalUserMessage) return msg;
       return {
@@ -1011,12 +1030,17 @@ HERRAMIENTAS DISPONIBLES
     const msgs = this.messages.slice(-limit);
     return msgs.map((msg) => {
       const apiRole = msg.role === "tool" ? "user" : msg.role;
-      let content = typeof msg.content === "string"
-        ? msg.content
-        : JSON.stringify(msg.content);
+      let content =
+        typeof msg.content === "string"
+          ? msg.content
+          : JSON.stringify(msg.content);
 
       // Truncate extremely long tool results (file contents)
-      if (msg.role === "tool" && content.startsWith("[Resultado de") && content.length > 15000) {
+      if (
+        msg.role === "tool" &&
+        content.startsWith("[Resultado de") &&
+        content.length > 15000
+      ) {
         content = content.slice(0, 15000) + "\n...[truncado por longitud]";
       }
 
@@ -1095,7 +1119,9 @@ HERRAMIENTAS DISPONIBLES
     }
 
     if (iteration >= MAX_ITER) {
-      this.appendSystemNote(`Límite de iteraciones alcanzado (${MAX_ITER}). Puedes aumentar este límite en los ajustes del agente si la tarea es muy compleja.`);
+      this.appendSystemNote(
+        `Límite de iteraciones alcanzado (${MAX_ITER}). Puedes aumentar este límite en los ajustes del agente si la tarea es muy compleja.`,
+      );
       return;
     }
 
@@ -1116,7 +1142,7 @@ HERRAMIENTAS DISPONIBLES
       const onToken = (tok) => {
         if (signal?.aborted) return;
         fullResponse += tok;
-        
+
         // Detección temprana en streaming
         if (this.activeTab === "agent") {
           this.detectEarlyToolCalls(fullResponse, msgEl, signal);
@@ -1158,7 +1184,9 @@ HERRAMIENTAS DISPONIBLES
         if (hash === this.lastToolCallsHash) {
           this.repetitionCount++;
           if (this.repetitionCount >= 2) {
-            this.appendSystemNote("DETECCIÓN DE BUCLE: El agente está repitiendo las mismas acciones. Deteniendo para evitar errores infinitos.");
+            this.appendSystemNote(
+              "DETECCIÓN DE BUCLE: El agente está repitiendo las mismas acciones. Deteniendo para evitar errores infinitos.",
+            );
             this.isStreaming = false;
             this.updateUIState();
             return;
@@ -1183,7 +1211,8 @@ HERRAMIENTAS DISPONIBLES
         // Esperar a que terminen las early (puede que sigan corriendo)
         if (earlyPromises.length) await Promise.allSettled(earlyPromises);
         // Ejecutar las que no se procesaron early
-        if (pendingCalls.length) await this.runToolCallsInParallel(pendingCalls, msgEl, signal);
+        if (pendingCalls.length)
+          await this.runToolCallsInParallel(pendingCalls, msgEl, signal);
         // Limpiar para la siguiente iteración
         this._earlyCallPromises = new Map();
 
@@ -1235,7 +1264,9 @@ HERRAMIENTAS DISPONIBLES
       }
     } catch (err) {
       if (signal?.aborted || !this.isTransientStreamError(err)) throw err;
-      this.appendSystemNote("Conexión inestable detectada. Reintentando la respuesta una vez…");
+      this.appendSystemNote(
+        "Conexión inestable detectada. Reintentando la respuesta una vez…",
+      );
       await new Promise((resolve) => setTimeout(resolve, 700));
 
       if (this.provider === "ollama") {
@@ -1310,12 +1341,14 @@ HERRAMIENTAS DISPONIBLES
         throw err;
       }
     }
-    
-    // Para DeepSeek/Groq, usamos la infraestructura de streaming IPC 
+
+    // Para DeepSeek/Groq, usamos la infraestructura de streaming IPC
     // pero recolectamos todos los tokens en una promesa.
     let fullText = "";
-    const onToken = (tok) => { fullText += tok; };
-    
+    const onToken = (tok) => {
+      fullText += tok;
+    };
+
     if (this.provider === "deepseek") {
       await this.streamDeepSeek(messages, onToken);
     } else {
@@ -1358,7 +1391,8 @@ HERRAMIENTAS DISPONIBLES
           cleanup();
           let niceError = data.error;
           if (data.error.includes("401")) {
-            niceError = "Error de Autenticación (401): Tu API Key parece ser inválida o ha expirado. Por favor, revísala en Configuración. Nota: Si usas DeepSeek, asegúrate de tener saldo en tu cuenta.";
+            niceError =
+              "Error de Autenticación (401): Tu API Key parece ser inválida o ha expirado. Por favor, revísala en Configuración. Nota: Si usas DeepSeek, asegúrate de tener saldo en tu cuenta.";
           }
           reject(new Error(niceError));
           return;
@@ -1487,7 +1521,10 @@ HERRAMIENTAS DISPONIBLES
     // el streaming — se dejan para post-stream donde la UI está en reposo
     // y el usuario puede ver e interactuar con la tarjeta de confirmación.
     const NEEDS_CONFIRM = new Set([
-      "delete_file", "delete_directory", "run_command", "move_file",
+      "delete_file",
+      "delete_directory",
+      "run_command",
+      "move_file",
     ]);
 
     for (const tc of calls) {
@@ -1515,7 +1552,7 @@ HERRAMIENTAS DISPONIBLES
     // Also cut at the start of a ```json fenced block that's a tool call
     const fenceStart = noThoughts.search(/\n?\s*```(?:json)?\s*\n\s*\{/);
     const cutAt = Math.min(
-      jsonStart  >= 0 ? jsonStart  : Infinity,
+      jsonStart >= 0 ? jsonStart : Infinity,
       fenceStart >= 0 ? fenceStart : Infinity,
     );
     const visible = cutAt < Infinity ? noThoughts.slice(0, cutAt) : noThoughts;
@@ -1527,36 +1564,67 @@ HERRAMIENTAS DISPONIBLES
     if (!text) return "";
 
     // 1. Strip fenced code blocks (```json ... ``` or ``` ... ```) that contain tool calls
-    let cleaned = text.replace(/```(?:json)?\s*\n([\s\S]*?)\n?```/g, (match, inner) => {
-      const trimmed = inner.trim();
-      if (!trimmed.startsWith("{")) return match;
-      try {
-        const obj = JSON.parse(trimmed);
-        if (obj && typeof obj.tool === "string") return "";
-      } catch {}
-      return match;
-    });
+    let cleaned = text.replace(
+      /```(?:json)?\s*\n([\s\S]*?)\n?```/g,
+      (match, inner) => {
+        const trimmed = inner.trim();
+        if (!trimmed.startsWith("{")) return match;
+        try {
+          const obj = JSON.parse(trimmed);
+          if (obj && typeof obj.tool === "string") return "";
+        } catch {}
+        return match;
+      },
+    );
 
     // 2. Strip inline JSON tool calls {\"tool\":...}
-    let result = "", i = 0;
+    let result = "",
+      i = 0;
     while (i < cleaned.length) {
-      if (cleaned[i] !== "{") { result += cleaned[i++]; continue; }
-      let depth = 0, j = i, inStr = false, esc = false;
+      if (cleaned[i] !== "{") {
+        result += cleaned[i++];
+        continue;
+      }
+      let depth = 0,
+        j = i,
+        inStr = false,
+        esc = false;
       while (j < cleaned.length) {
         const ch = cleaned[j];
-        if (esc) { esc = false; j++; continue; }
-        if (ch === "\\" && inStr) { esc = true; j++; continue; }
-        if (ch === '"') { inStr = !inStr; j++; continue; }
+        if (esc) {
+          esc = false;
+          j++;
+          continue;
+        }
+        if (ch === "\\" && inStr) {
+          esc = true;
+          j++;
+          continue;
+        }
+        if (ch === '"') {
+          inStr = !inStr;
+          j++;
+          continue;
+        }
         if (!inStr) {
           if (ch === "{") depth++;
-          else if (ch === "}") { depth--; if (depth === 0) { j++; break; } }
+          else if (ch === "}") {
+            depth--;
+            if (depth === 0) {
+              j++;
+              break;
+            }
+          }
         }
         j++;
       }
       if (depth === 0 && j > i) {
         try {
           const obj = JSON.parse(cleaned.slice(i, j));
-          if (obj && typeof obj.tool === "string") { i = j; continue; }
+          if (obj && typeof obj.tool === "string") {
+            i = j;
+            continue;
+          }
         } catch {}
       }
       result += cleaned[i++];
@@ -1567,7 +1635,10 @@ HERRAMIENTAS DISPONIBLES
   stripThoughts(text) {
     if (!text) return "";
     // Strip <thought>...</thought> blocks (internal agent reasoning)
-    return text.replace(/<thought>[\s\S]*?<\/thought>/gi, "").replace(/\n{3,}/g, "\n\n").trim();
+    return text
+      .replace(/<thought>[\s\S]*?<\/thought>/gi, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
   }
 
   // ==========================================================================
@@ -1576,18 +1647,25 @@ HERRAMIENTAS DISPONIBLES
 
   async runToolCallsInParallel(toolCalls, msgEl, signal) {
     const readOnlyTools = new Set([
-      "read_file", "read_multiple_files", "list_files",
-      "get_project_structure", "search_in_files",
-      "get_diagnostics", "get_open_file",
+      "read_file",
+      "read_multiple_files",
+      "list_files",
+      "get_project_structure",
+      "search_in_files",
+      "get_diagnostics",
+      "get_open_file",
     ]);
 
     // Tools que necesitan confirmación del usuario → siempre en serie
     // (no se pueden mostrar dos tarjetas al mismo tiempo)
     const confirmTools = new Set([
-      "delete_file", "delete_directory", "run_command", "move_file",
+      "delete_file",
+      "delete_directory",
+      "run_command",
+      "move_file",
     ]);
 
-    const serial = [];   // se ejecutan una por una en orden
+    const serial = []; // se ejecutan una por una en orden
     const parallel = []; // se pueden lanzar todas a la vez
 
     for (const tc of toolCalls) {
@@ -1641,22 +1719,36 @@ HERRAMIENTAS DISPONIBLES
       const ok = await this.requestConfirmation(tool, params, msg);
       if (!ok) {
         this.addToolStep(msgEl, "cancelled", tool, "Cancelado por el usuario");
-        this.pushInternalMessage(`[Herramienta ${tool} cancelada por el usuario]`);
+        this.pushInternalMessage(
+          `[Herramienta ${tool} cancelada por el usuario]`,
+        );
         return false;
       }
     }
 
-    const stepEl = this.addToolStep(msgEl, "running", tool, this.describeAction(tool, params));
+    const stepEl = this.addToolStep(
+      msgEl,
+      "running",
+      tool,
+      this.describeAction(tool, params),
+    );
 
     // ── Checkpoint: capturar estado ANTES de modificar ───────────────────────
     const FILE_MUTATING_TOOLS = new Set([
-      "write_file", "create_file", "delete_file",
-      "apply_diff", "search_replace", "move_file", "delete_directory",
+      "write_file",
+      "create_file",
+      "delete_file",
+      "apply_diff",
+      "search_replace",
+      "move_file",
+      "delete_directory",
     ]);
     if (FILE_MUTATING_TOOLS.has(tool)) {
       const isDir = tool === "delete_directory";
       const affectedPath = params.path || params.source || null;
-      const destPath = params.destination ? this.resolvePath(params.destination) : null;
+      const destPath = params.destination
+        ? this.resolvePath(params.destination)
+        : null;
 
       if (affectedPath) {
         const resolved = this.resolvePath(affectedPath);
@@ -1678,92 +1770,93 @@ HERRAMIENTAS DISPONIBLES
             {
               conversationId: this.activeConversation || "draft",
               messageId: this._activeTurn?.userMessageId || null,
-              userText: this._activeTurn?.userMessageEl?.querySelector(".ai-msg-content")?.textContent || "",
+              userText:
+                this._activeTurn?.userMessageEl?.querySelector(
+                  ".ai-msg-content",
+                )?.textContent || "",
               editorState,
-            }
+            },
           );
 
           if (this._activeTurn && this._currentCheckpointId) {
             this._activeTurn.checkpointId = this._currentCheckpointId;
-            const userMsg = this.messages.find((msg) => msg.id === this._activeTurn.userMessageId);
+            const userMsg = this.messages.find(
+              (msg) => msg.id === this._activeTurn.userMessageId,
+            );
             if (userMsg) {
               userMsg.checkpointId = this._currentCheckpointId;
               userMsg.hasFileChanges = true;
             }
-            this.attachRollbackActionToUserMessage(this._activeTurn.userMessageId, this._currentCheckpointId);
+            this.attachRollbackActionToUserMessage(
+              this._activeTurn.userMessageId,
+              this._currentCheckpointId,
+            );
           }
         } else {
           await checkpointManager.addToCheckpoint(
-            this._currentCheckpointId, resolved, isDir ? 'directory' : 'file'
+            this._currentCheckpointId,
+            resolved,
+            isDir ? "directory" : "file",
           );
           if (destPath) {
-            await checkpointManager.addToCheckpoint(this._currentCheckpointId, destPath, 'file');
+            await checkpointManager.addToCheckpoint(
+              this._currentCheckpointId,
+              destPath,
+              "file",
+            );
           }
         }
       }
     }
     // ────────────────────────────────────────────────────────────────────────
 
-    // ── Preview en vivo para run_command ─────────────────────────────────────
-    if (tool === "run_command" && window.api.agentRunCommandLive) {
+    // ── Ejecución de comandos en la Terminal del IDE ──────────────────────────
+    if (tool === "run_command") {
       const cwd = params.cwd
         ? this.resolvePath(params.cwd)
         : this.state.currentFolder;
       if (!cwd) {
         this.addToolStep(msgEl, "error", tool, "No hay carpeta abierta.");
-        this.pushInternalMessage(`[Error en "run_command"]: No hay carpeta abierta.`);
+        this.pushInternalMessage(
+          `[Error en "run_command"]: No hay carpeta abierta.`,
+        );
         return false;
       }
 
-      // Área de output en tiempo real
-      const preview = document.createElement("pre");
-      preview.className = "ai-cmd-preview";
-      stepEl?.appendChild(preview);
-      this.scrollToBottom();
+      // Notificar a la UI
+      this.updateToolStep(stepEl, "done", tool, params);
 
-      const reqId = `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      // Enviar el comando a la terminal real del IDE
+      this.state.emit("terminal:run", { command: params.command, cwd });
 
-      // Escuchar detección de puerto para mostrar preview del servidor
-      let previewShown = false;
-      const unlistenPort = window.api.onServerPort?.((data) => {
-        if (data.reqId !== reqId || previewShown) return;
-        previewShown = true;
-        this._showServerPreview(stepEl, data.port, reqId);
-      });
+      const isServer =
+        /^(npm(\s+run)?\s+(dev|start|serve|preview)|yarn\s+(dev|start|serve|preview)|pnpm(\s+run)?\s+(dev|start|serve|preview)|npx\s+(vite|serve|http-server|live-server)|vite(\s|$)|python3?\s+-m\s+http\.server|node\s+.*(server|app)\.(js|ts|mjs)|deno\s+run)/i.test(
+          params.command.trim(),
+        );
 
-      const unlisten = window.api.onCmdOutput(({ reqId: id, data }) => {
-        if (id !== reqId) return;
-        preview.textContent += data;
-        preview.scrollTop = preview.scrollHeight;
-        this.scrollToBottom();
-      });
-
-      try {
-        const r = await window.api.agentRunCommandLive(params.command, cwd, reqId);
-        unlisten();
-        unlistenPort?.();
-        if (r.port && !previewShown) {
-          previewShown = true;
-          this._showServerPreview(stepEl, r.port, reqId);
-        }
-        const out = r.isServer
-          ? `Servidor ejecutándose en http://localhost:${r.port || "?"}`
-          : [r.stdout && `stdout:\n${r.stdout}`, r.stderr && `stderr:\n${r.stderr}`, `exit: ${r.exitCode}`].filter(Boolean).join("\n");
-        this.updateToolStep(stepEl, "done", tool, params);
-        this.pushInternalMessage(`[Resultado de "run_command"]\n${out}`);
-        return true;
-      } catch (err) {
-        unlisten();
-        unlistenPort?.();
-        this.updateToolStep(stepEl, "error", tool, params);
-        this.pushInternalMessage(`[Error en "run_command"]: ${err.message}`);
-        return false;
+      if (isServer) {
+        this.pushInternalMessage(
+          `[Resultado de "run_command"]\nComando de servidor enviado a la Terminal del IDE. El usuario podrá ver los logs y errores allí.`,
+        );
+      } else {
+        // Pausa breve para dar sensación de que espera, aunque se ejecute asíncrono en pty
+        await new Promise((r) => setTimeout(r, 2000));
+        this.pushInternalMessage(
+          `[Resultado de "run_command"]\nComando ejecutado en la Terminal del IDE. (Nota: Logs y errores visibles en la pestaña Terminal, no aquí).`,
+        );
       }
+      return true;
     }
     // ─────────────────────────────────────────────────────────────────────────
 
     // ── Capturar contenido previo para diff (write/create/apply_diff) ────────
-    const DIFF_TOOLS = new Set(["write_file", "create_file", "apply_diff", "search_replace", "append_to_file"]);
+    const DIFF_TOOLS = new Set([
+      "write_file",
+      "create_file",
+      "apply_diff",
+      "search_replace",
+      "append_to_file",
+    ]);
     let oldContent = null;
     if (DIFF_TOOLS.has(tool) && params.path) {
       try {
@@ -1778,7 +1871,7 @@ HERRAMIENTAS DISPONIBLES
       // Update the running step in place → no second row added
       this.updateToolStep(stepEl, "done", tool, params);
       this.pushInternalMessage(
-        `[Resultado de "${tool}"]\n${typeof result === "string" ? result : JSON.stringify(result, null, 2)}`
+        `[Resultado de "${tool}"]\n${typeof result === "string" ? result : JSON.stringify(result, null, 2)}`,
       );
 
       // ── Diff en chat (verde/rojo) + diff en editor (Monaco) ─────────────
@@ -1786,31 +1879,61 @@ HERRAMIENTAS DISPONIBLES
         const fp = this.resolvePath(params.path);
         let newContent;
         if (tool === "apply_diff" || tool === "search_replace") {
-          if (tool === "apply_diff" && stepEl) this.renderParsedDiff(stepEl, params.diff || "", params.path);
+          if (tool === "apply_diff" && stepEl)
+            this.renderParsedDiff(stepEl, params.diff || "", params.path);
           try {
             const r = await window.api.agentReadFile(fp);
             newContent = r?.success ? (r.content ?? "") : "";
-          } catch { newContent = ""; }
-          if (tool === "search_replace" && stepEl) this.renderFileDiff(stepEl, oldContent ?? "", newContent, params.path);
+          } catch {
+            newContent = "";
+          }
+          if (tool === "search_replace" && stepEl)
+            this.renderFileDiff(
+              stepEl,
+              oldContent ?? "",
+              newContent,
+              params.path,
+            );
         } else {
-          newContent = tool === "append_to_file"
-            ? (oldContent ?? "") + "\n" + (params.content ?? "")
-            : (params.content ?? "");
-          if (stepEl) this.renderFileDiff(stepEl, oldContent ?? "", newContent, params.path);
+          newContent =
+            tool === "append_to_file"
+              ? (oldContent ?? "") + "\n" + (params.content ?? "")
+              : (params.content ?? "");
+          if (stepEl)
+            this.renderFileDiff(
+              stepEl,
+              oldContent ?? "",
+              newContent,
+              params.path,
+            );
         }
         this.showEditorDiff(fp, oldContent ?? "", newContent);
         // Guardar estadísticas en checkpoint
         if (this._currentCheckpointId) {
-          const stats = this._computeChangeStats(oldContent ?? "", newContent ?? "");
-          checkpointManager.setEntryStats(this._currentCheckpointId, fp, stats.added, stats.removed);
+          const stats = this._computeChangeStats(
+            oldContent ?? "",
+            newContent ?? "",
+          );
+          checkpointManager.setEntryStats(
+            this._currentCheckpointId,
+            fp,
+            stats.added,
+            stats.removed,
+          );
         }
 
         if (this.isCodeLikeFile(fp)) {
           const diagnosticsSummary = this.collectEditorDiagnosticsSummary(fp);
           if (diagnosticsSummary) {
-            this.pushInternalMessage(`[Verificaci�n autom�tica de "${params.path}"]` + "`n" + diagnosticsSummary);
+            this.pushInternalMessage(
+              `[Verificaci�n autom�tica de "${params.path}"]` +
+                "`n" +
+                diagnosticsSummary,
+            );
             if (diagnosticsSummary.includes("[ERROR]")) {
-              this.appendSystemNote(`Se detectaron errores en ${params.path}. El agente intentará corregirlos.`);
+              this.appendSystemNote(
+                `Se detectaron errores en ${params.path}. El agente intentará corregirlos.`,
+              );
             }
           }
         }
@@ -1820,29 +1943,38 @@ HERRAMIENTAS DISPONIBLES
       return true;
     } catch (err) {
       this.updateToolStep(stepEl, "error", tool, params);
-      this.pushInternalMessage(this.buildToolFailureFeedback(tool, params, err));
+      this.pushInternalMessage(
+        this.buildToolFailureFeedback(tool, params, err),
+      );
       return false;
     }
   }
 
   /** Cuenta líneas añadidas/eliminadas entre dos versiones de contenido */
   _computeChangeStats(oldContent, newContent) {
-    const oldLines = (oldContent || '').split('\n');
-    const newLines = (newContent || '').split('\n');
+    const oldLines = (oldContent || "").split("\n");
+    const newLines = (newContent || "").split("\n");
     const maxLen = Math.max(oldLines.length, newLines.length);
-    let added = 0, removed = 0;
+    let added = 0,
+      removed = 0;
     for (let i = 0; i < maxLen; i++) {
-      const o = oldLines[i], n = newLines[i];
+      const o = oldLines[i],
+        n = newLines[i];
       if (o === undefined) added++;
       else if (n === undefined) removed++;
-      else if (o !== n) { added++; removed++; }
+      else if (o !== n) {
+        added++;
+        removed++;
+      }
     }
     return { added, removed };
   }
 
   isCodeLikeFile(filePath) {
     if (!filePath) return false;
-    return /\.(js|jsx|ts|tsx|mjs|cjs|json|html|css|scss|sass|less|vue|svelte|py|java|cs|php|rb|go|rs|cpp|c|h|hpp|mdx?)$/i.test(filePath);
+    return /\.(js|jsx|ts|tsx|mjs|cjs|json|html|css|scss|sass|less|vue|svelte|py|java|cs|php|rb|go|rs|cpp|c|h|hpp|mdx?)$/i.test(
+      filePath,
+    );
   }
 
   collectEditorDiagnosticsSummary(filePath) {
@@ -1851,10 +1983,15 @@ HERRAMIENTAS DISPONIBLES
     const model = ed.getModel();
     if (!model) return null;
     const currentPath = this.state.currentFile || "";
-    const norm = (p) => String(p || "").replace(/\\/g, "/").toLowerCase();
+    const norm = (p) =>
+      String(p || "")
+        .replace(/\\/g, "/")
+        .toLowerCase();
     if (filePath && norm(currentPath) !== norm(filePath)) return null;
 
-    const markers = window.monaco.editor.getModelMarkers({ resource: model.uri });
+    const markers = window.monaco.editor.getModelMarkers({
+      resource: model.uri,
+    });
     if (!markers.length) {
       return "Verificación automática: no se detectaron errores ni advertencias. ✓";
     }
@@ -1862,12 +1999,16 @@ HERRAMIENTAS DISPONIBLES
     const summary = markers
       .slice(0, 12)
       .map((m) => {
-        const sev = m.severity === 8 ? "ERROR" : m.severity === 4 ? "WARNING" : "INFO";
+        const sev =
+          m.severity === 8 ? "ERROR" : m.severity === 4 ? "WARNING" : "INFO";
         return `[${sev}] L${m.startLineNumber}:C${m.startColumn} - ${m.message}`;
       })
       .join("\n");
 
-    const extra = markers.length > 12 ? `\n... ${markers.length - 12} diagnóstico(s) más` : "";
+    const extra =
+      markers.length > 12
+        ? `\n... ${markers.length - 12} diagnóstico(s) más`
+        : "";
     return `Verificación automática tras editar:\n${summary}${extra}`;
   }
 
@@ -1901,17 +2042,23 @@ HERRAMIENTAS DISPONIBLES
     // Calcular líneas añadidas/eliminadas (comparación posicional simple)
     const rows = [];
     const maxLen = Math.max(oldLines.length, newLines.length);
-    let added = 0, removed = 0;
+    let added = 0,
+      removed = 0;
 
     for (let i = 0; i < maxLen; i++) {
-      const o = oldLines[i], n = newLines[i];
+      const o = oldLines[i],
+        n = newLines[i];
       if (o === undefined) {
-        rows.push({ type: "add", text: n }); added++;
+        rows.push({ type: "add", text: n });
+        added++;
       } else if (n === undefined) {
-        rows.push({ type: "del", text: o }); removed++;
+        rows.push({ type: "del", text: o });
+        removed++;
       } else if (o !== n) {
-        rows.push({ type: "del", text: o }); removed++;
-        rows.push({ type: "add", text: n }); added++;
+        rows.push({ type: "del", text: o });
+        removed++;
+        rows.push({ type: "add", text: n });
+        added++;
       }
     }
 
@@ -1920,12 +2067,18 @@ HERRAMIENTAS DISPONIBLES
     const shown = rows.slice(0, MAX);
     const extra = rows.length - shown.length;
 
-    const html = shown.map(r =>
-      `<div class="ai-diff-line ai-diff-line--${r.type}">${
-        r.type === "add" ? "+" : "−"
-      } ${escapeHtml(r.text)}</div>`
-    ).join("") +
-      (extra > 0 ? `<div class="ai-diff-more">… ${extra} líneas más</div>` : "") +
+    const html =
+      shown
+        .map(
+          (r) =>
+            `<div class="ai-diff-line ai-diff-line--${r.type}">${
+              r.type === "add" ? "+" : "−"
+            } ${escapeHtml(r.text)}</div>`,
+        )
+        .join("") +
+      (extra > 0
+        ? `<div class="ai-diff-more">… ${extra} líneas más</div>`
+        : "") +
       `<div class="ai-diff-stats"><span class="ai-diff-stat-add">+${added}</span> <span class="ai-diff-stat-del">−${removed}</span></div>`;
 
     const el = document.createElement("div");
@@ -1940,24 +2093,34 @@ HERRAMIENTAS DISPONIBLES
     if (!diffText) return;
     const filename = (filePath || "").split(/[/\\]/).pop();
     const MAX = 18;
-    const lines = diffText.split("\n").filter(l =>
-      (l.startsWith("+") && !l.startsWith("+++")) ||
-      (l.startsWith("-") && !l.startsWith("---"))
-    );
+    const lines = diffText
+      .split("\n")
+      .filter(
+        (l) =>
+          (l.startsWith("+") && !l.startsWith("+++")) ||
+          (l.startsWith("-") && !l.startsWith("---")),
+      );
     if (!lines.length) return;
 
     const shown = lines.slice(0, MAX);
     const extra = lines.length - shown.length;
-    let added = 0, removed = 0;
+    let added = 0,
+      removed = 0;
 
-    const html = shown.map(l => {
-      const isAdd = l.startsWith("+");
-      if (isAdd) added++; else removed++;
-      return `<div class="ai-diff-line ai-diff-line--${isAdd ? "add" : "del"}">${
-        isAdd ? "+" : "−"
-      } ${escapeHtml(l.slice(1))}</div>`;
-    }).join("") +
-      (extra > 0 ? `<div class="ai-diff-more">… ${extra} líneas más</div>` : "") +
+    const html =
+      shown
+        .map((l) => {
+          const isAdd = l.startsWith("+");
+          if (isAdd) added++;
+          else removed++;
+          return `<div class="ai-diff-line ai-diff-line--${isAdd ? "add" : "del"}">${
+            isAdd ? "+" : "−"
+          } ${escapeHtml(l.slice(1))}</div>`;
+        })
+        .join("") +
+      (extra > 0
+        ? `<div class="ai-diff-more">… ${extra} líneas más</div>`
+        : "") +
       `<div class="ai-diff-stats"><span class="ai-diff-stat-add">+${added}</span> <span class="ai-diff-stat-del">−${removed}</span></div>`;
 
     const el = document.createElement("div");
@@ -1968,30 +2131,30 @@ HERRAMIENTAS DISPONIBLES
   }
 
   describeAction(tool, params) {
-    const file  = (params.path || params.source || "").split(/[/\\]/).pop();
-    const dir   = (params.directory || ".").split(/[/\\]/).pop() || ".";
+    const file = (params.path || params.source || "").split(/[/\\]/).pop();
+    const dir = (params.directory || ".").split(/[/\\]/).pop() || ".";
     const files = (params.paths || []).length;
     const map = {
-      read_file:            `Leyendo ${file}`,
-      read_multiple_files:  `Leyendo ${files} archivo${files !== 1 ? "s" : ""}`,
-      write_file:           `Escribiendo ${file}`,
-      create_file:          `Creando ${file}`,
-      apply_diff:           `Editando ${file}`,
-      search_replace:       `Reemplazando en ${file}`,
-      append_to_file:       `Actualizando ${file}`,
-      delete_file:          `Eliminando ${file}`,
-      delete_directory:     `Eliminando carpeta ${file}`,
-      move_file:            `Moviendo ${file}`,
-      create_directory:     `Creando carpeta`,
-      list_files:           `Explorando ${dir}`,
-      get_project_structure:"Analizando proyecto",
-      search_in_files:      `Buscando «${params.query || ""}»`,
-      run_command:          `$ ${(params.command || "").slice(0, 40)}`,
-      get_diagnostics:      "Verificando errores",
-      get_open_file:        "Leyendo editor",
-      open_file:            `Abriendo ${file}`,
-      insert_at_cursor:     "Insertando código",
-      replace_selection:    "Reemplazando selección",
+      read_file: `Leyendo ${file}`,
+      read_multiple_files: `Leyendo ${files} archivo${files !== 1 ? "s" : ""}`,
+      write_file: `Escribiendo ${file}`,
+      create_file: `Creando ${file}`,
+      apply_diff: `Editando ${file}`,
+      search_replace: `Reemplazando en ${file}`,
+      append_to_file: `Actualizando ${file}`,
+      delete_file: `Eliminando ${file}`,
+      delete_directory: `Eliminando carpeta ${file}`,
+      move_file: `Moviendo ${file}`,
+      create_directory: `Creando carpeta`,
+      list_files: `Explorando ${dir}`,
+      get_project_structure: "Analizando proyecto",
+      search_in_files: `Buscando «${params.query || ""}»`,
+      run_command: `$ ${(params.command || "").slice(0, 40)}`,
+      get_diagnostics: "Verificando errores",
+      get_open_file: "Leyendo editor",
+      open_file: `Abriendo ${file}`,
+      insert_at_cursor: "Insertando código",
+      replace_selection: "Reemplazando selección",
     };
     return map[tool] || tool;
   }
@@ -2000,14 +2163,16 @@ HERRAMIENTAS DISPONIBLES
   updateToolStep(stepEl, status, tool, params) {
     if (!stepEl) return;
     stepEl.className = `ai-tool-step ai-tool-step--${status}`;
-    const indEl  = stepEl.querySelector(".ai-step-ind");
+    const indEl = stepEl.querySelector(".ai-step-ind");
     const textEl = stepEl.querySelector(".ai-step-text");
     if (!indEl || !textEl) return;
 
     if (status === "done") {
       indEl.innerHTML = "";
       indEl.textContent = "✓";
-      const file = (params?.path || params?.source || params?.directory || "").split(/[/\\]/).pop();
+      const file = (params?.path || params?.source || params?.directory || "")
+        .split(/[/\\]/)
+        .pop();
       textEl.textContent = file || tool;
     } else if (status === "error") {
       indEl.innerHTML = "";
@@ -2028,8 +2193,10 @@ HERRAMIENTAS DISPONIBLES
   requestConfirmation(tool, params, message) {
     return new Promise((resolve) => {
       const icons = {
-        delete_file: "🗑️", delete_directory: "🗑️",
-        run_command: "⚡", move_file: "↔️",
+        delete_file: "🗑️",
+        delete_directory: "🗑️",
+        run_command: "⚡",
+        move_file: "↔️",
       };
 
       // Status bar
@@ -2051,7 +2218,9 @@ HERRAMIENTAS DISPONIBLES
           <div class="ai-confirm-message">${escapeHtml(message)}</div>
         `;
         messagesEl.appendChild(ghost);
-        setTimeout(() => { messagesEl.scrollTop = messagesEl.scrollHeight; }, 0);
+        setTimeout(() => {
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        }, 0);
       }
 
       // 2) Overlay flotante garantizado — aparece sobre la barra de input
@@ -2080,19 +2249,30 @@ HERRAMIENTAS DISPONIBLES
         const ghost = messagesEl?.lastElementChild;
         if (ghost?.classList.contains("ai-confirm-card")) {
           ghost.classList.add("ai-confirm-resolved");
-          ghost.querySelector(".ai-confirm-message").insertAdjacentHTML(
-            "afterend",
-            ok
-              ? `<div class="ai-confirm-actions"><span class="ai-confirm-result ai-confirm-result--ok">✓ Permitido</span></div>`
-              : `<div class="ai-confirm-actions"><span class="ai-confirm-result ai-confirm-result--deny">✗ Cancelado</span></div>`
-          );
+          ghost
+            .querySelector(".ai-confirm-message")
+            .insertAdjacentHTML(
+              "afterend",
+              ok
+                ? `<div class="ai-confirm-actions"><span class="ai-confirm-result ai-confirm-result--ok">✓ Permitido</span></div>`
+                : `<div class="ai-confirm-actions"><span class="ai-confirm-result ai-confirm-result--deny">✗ Cancelado</span></div>`,
+            );
         }
-        if (statusEl) statusEl.innerHTML = `<span class="ai-status-dot"></span>Agente trabajando…`;
+        if (statusEl)
+          statusEl.innerHTML = `<span class="ai-status-dot"></span>Agente trabajando…`;
         resolve(ok);
       };
 
-      el.querySelector(".ai-confirm-allow").addEventListener("click", () => done(true),  { once: true });
-      el.querySelector(".ai-confirm-deny") .addEventListener("click", () => done(false), { once: true });
+      el.querySelector(".ai-confirm-allow").addEventListener(
+        "click",
+        () => done(true),
+        { once: true },
+      );
+      el.querySelector(".ai-confirm-deny").addEventListener(
+        "click",
+        () => done(false),
+        { once: true },
+      );
     });
   }
 
@@ -2117,7 +2297,8 @@ HERRAMIENTAS DISPONIBLES
       return `Eliminar la carpeta y TODO su contenido:\n${params.path}`;
     }
     if (tool === "run_command") {
-      const cwd = params.cwd || this.state.currentFolder || "(sin carpeta abierta)";
+      const cwd =
+        params.cwd || this.state.currentFolder || "(sin carpeta abierta)";
       return `Ejecutar comando en terminal:\n$ ${params.command || "(vacío)"}\n\nCarpeta: ${cwd}`;
     }
     if (tool === "move_file") {
@@ -2146,7 +2327,30 @@ HERRAMIENTAS DISPONIBLES
       return base.replace(/[/\\]+$/, "") + sep + p.replace(/^[/\\]+/, "");
     };
 
-    const allowedTools = ["read_file","read_multiple_files","write_file","create_file","append_to_file","delete_file","delete_directory","create_directory","move_file","list_files","get_project_structure","search_in_files","run_command","get_open_file","open_file","insert_at_cursor","replace_selection","get_diagnostics","write_memory","read_memory","apply_diff","search_replace"];
+    const allowedTools = [
+      "read_file",
+      "read_multiple_files",
+      "write_file",
+      "create_file",
+      "append_to_file",
+      "delete_file",
+      "delete_directory",
+      "create_directory",
+      "move_file",
+      "list_files",
+      "get_project_structure",
+      "search_in_files",
+      "run_command",
+      "get_open_file",
+      "open_file",
+      "insert_at_cursor",
+      "replace_selection",
+      "get_diagnostics",
+      "write_memory",
+      "read_memory",
+      "apply_diff",
+      "search_replace",
+    ];
     if (!allowedTools.includes(tool)) {
       return `ERROR: La herramienta "${tool}" no existe. Por favor, usa SOLO una de las herramientas permitidas: ${allowedTools.join(", ")}.`;
     }
@@ -2155,7 +2359,8 @@ HERRAMIENTAS DISPONIBLES
       case "read_file": {
         const fp = resolve(params.path);
         const opts = {};
-        if (typeof params.start_line === "number") opts.startLine = params.start_line;
+        if (typeof params.start_line === "number")
+          opts.startLine = params.start_line;
         if (typeof params.end_line === "number") opts.endLine = params.end_line;
 
         this.ensureWorkspacePath(
@@ -2164,7 +2369,7 @@ HERRAMIENTAS DISPONIBLES
         );
         const r = await window.api.agentReadFile(fp, opts);
         if (!r.success) throw new Error(r.error);
-        
+
         if (opts.startLine || opts.endLine) {
           return `[Archivo: ${params.path}, Líneas ${r.range.startLine}-${r.range.endLine} de ${r.totalLines}]\n\n${r.content}`;
         }
@@ -2174,14 +2379,17 @@ HERRAMIENTAS DISPONIBLES
       case "read_multiple_files": {
         const paths = Array.isArray(params.paths) ? params.paths : [];
         const results = [];
-        for (const p of paths.slice(0, 10)) { // max 10 files
+        for (const p of paths.slice(0, 10)) {
+          // max 10 files
           const fp = resolve(p);
           try {
             this.ensureWorkspacePath(fp, "");
             const r = await window.api.agentReadFile(fp);
             if (r.success) {
-              const lines = r.content.split('\n').length;
-              results.push(`\n📄 **${p}** (${lines} líneas):\n\`\`\`\n${r.content.slice(0, 8000)}\n\`\`\``);
+              const lines = r.content.split("\n").length;
+              results.push(
+                `\n📄 **${p}** (${lines} líneas):\n\`\`\`\n${r.content.slice(0, 8000)}\n\`\`\``,
+              );
             } else {
               results.push(`\n❌ **${p}**: ${r.error}`);
             }
@@ -2422,11 +2630,17 @@ HERRAMIENTAS DISPONIBLES
 
       case "append_to_file": {
         const fp = resolve(params.path);
-        this.ensureWorkspacePath(fp, "No se puede escribir fuera de la carpeta abierta.");
+        this.ensureWorkspacePath(
+          fp,
+          "No se puede escribir fuera de la carpeta abierta.",
+        );
         // Read existing content first
         const existing = await window.api.agentReadFile(fp);
-        const current = existing.success ? (existing.content || "") : "";
-        const newContent = current + (current && !current.endsWith("\n") ? "\n" : "") + (params.content || "");
+        const current = existing.success ? existing.content || "" : "";
+        const newContent =
+          current +
+          (current && !current.endsWith("\n") ? "\n" : "") +
+          (params.content || "");
         const r = await window.api.agentWriteFile(fp, newContent);
         if (!r.success) throw new Error(r.error);
         this.syncEditorIfOpen(fp, newContent);
@@ -2436,24 +2650,40 @@ HERRAMIENTAS DISPONIBLES
 
       case "search_replace": {
         const fp = resolve(params.path);
-        this.ensureWorkspacePath(fp, "No se puede editar fuera de la carpeta abierta.");
-        if (!params.search) throw new Error('search_replace requiere el parámetro "search".');
-        const r = await window.api.agentSearchReplace(fp, params.search, params.replace ?? "");
-        if (!r.success) throw new Error(`❌ search_replace FALLÓ — el archivo NO fue modificado.\n${r.error}\n\nUSA el texto exacto que aparece en el archivo, o usa write_file con el archivo completo.`);
+        this.ensureWorkspacePath(
+          fp,
+          "No se puede editar fuera de la carpeta abierta.",
+        );
+        if (!params.search)
+          throw new Error('search_replace requiere el parámetro "search".');
+        const r = await window.api.agentSearchReplace(
+          fp,
+          params.search,
+          params.replace ?? "",
+        );
+        if (!r.success)
+          throw new Error(
+            `❌ search_replace FALLÓ — el archivo NO fue modificado.\n${r.error}\n\nUSA el texto exacto que aparece en el archivo, o usa write_file con el archivo completo.`,
+          );
         this.syncEditorIfOpen(fp, r.content);
         return `✅ Reemplazo aplicado correctamente en: ${fp}`;
       }
 
       case "apply_diff": {
         const fp = resolve(params.path);
-        this.ensureWorkspacePath(fp, "No se puede editar fuera de la carpeta abierta.");
+        this.ensureWorkspacePath(
+          fp,
+          "No se puede editar fuera de la carpeta abierta.",
+        );
         const r = await window.api.agentApplyDiff(fp, params.diff);
         if (!r.success) {
           const current = await window.api.agentReadFile(fp);
           const fileInfo = current.success
-            ? `\n\nContenido actual (${current.content.split('\n').length} líneas) — usa este contenido para write_file:\n\`\`\`\n${current.content.slice(0, 6000)}\n\`\`\``
+            ? `\n\nContenido actual (${current.content.split("\n").length} líneas) — usa este contenido para write_file:\n\`\`\`\n${current.content.slice(0, 6000)}\n\`\`\``
             : "";
-          throw new Error(`apply_diff falló: ${r.error}${fileInfo}\n\n⛔ STOP — NO leas el archivo otra vez. El contenido está arriba. USA write_file AHORA con el texto correcto.`);
+          throw new Error(
+            `apply_diff falló: ${r.error}${fileInfo}\n\n⛔ STOP — NO leas el archivo otra vez. El contenido está arriba. USA write_file AHORA con el texto correcto.`,
+          );
         }
         this.syncEditorIfOpen(fp, r.content);
         this.highlightDiff(fp, params.diff);
@@ -2500,7 +2730,9 @@ HERRAMIENTAS DISPONIBLES
   ensureWorkspacePath(targetPath, message) {
     if (!this.isPathInWorkspace(targetPath)) {
       const workspace = this.state.currentFolder || "ninguno";
-      throw new Error(`${message}. Estas intentando acceder a: ${targetPath}. Tu espacio de trabajo permitido es: ${workspace}`);
+      throw new Error(
+        `${message}. Estas intentando acceder a: ${targetPath}. Tu espacio de trabajo permitido es: ${workspace}`,
+      );
     }
   }
 
@@ -2514,11 +2746,15 @@ HERRAMIENTAS DISPONIBLES
 
     const messages = this.container.querySelector("#ai-messages");
     const el = document.createElement("div");
-    const msg = typeof messageOrRole === "object"
-      ? messageOrRole
-      : { role: messageOrRole, content: text, displayContent: text };
+    const msg =
+      typeof messageOrRole === "object"
+        ? messageOrRole
+        : { role: messageOrRole, content: text, displayContent: text };
     const role = msg.role;
-    const displayText = role === "user" ? (msg.displayContent ?? msg.content ?? "") : (text ?? msg.content ?? "");
+    const displayText =
+      role === "user"
+        ? (msg.displayContent ?? msg.content ?? "")
+        : (text ?? msg.content ?? "");
 
     el.className = `ai-msg ai-msg--${role}`;
     if (msg.id) el.dataset.messageId = msg.id;
@@ -2555,7 +2791,11 @@ HERRAMIENTAS DISPONIBLES
 
   attachRollbackActionToUserMessage(messageId, checkpointId, rootEl = null) {
     if (!messageId || !checkpointId) return;
-    const el = rootEl || this.container.querySelector(`.ai-msg--user[data-message-id="${messageId}"]`);
+    const el =
+      rootEl ||
+      this.container.querySelector(
+        `.ai-msg--user[data-message-id="${messageId}"]`,
+      );
     if (!el) return;
     const actions = el.querySelector(".ai-msg-actions");
     if (!actions) return;
@@ -2579,7 +2819,8 @@ HERRAMIENTAS DISPONIBLES
     const c = el.querySelector(".ai-msg-content");
     if (!c) return;
     c.innerHTML =
-      (text ? renderMarkdown(text, true) : "") + '<span class="ai-cursor">▋</span>';
+      (text ? renderMarkdown(text, true) : "") +
+      '<span class="ai-cursor">▋</span>';
     this.scrollToBottom();
   }
 
@@ -2747,9 +2988,13 @@ HERRAMIENTAS DISPONIBLES
     this._activeTurn = null;
 
     if (errors.length) {
-      this.appendSystemNote(`Rollback aplicado con ${errors.length} error(es) parciales.`);
+      this.appendSystemNote(
+        `Rollback aplicado con ${errors.length} error(es) parciales.`,
+      );
     } else {
-      this.appendSystemNote("Rollback aplicado. El chat y los archivos volvieron al estado previo.");
+      this.appendSystemNote(
+        "Rollback aplicado. El chat y los archivos volvieron al estado previo.",
+      );
     }
 
     if (this.messages.length) this.saveConversation();
@@ -2765,7 +3010,8 @@ HERRAMIENTAS DISPONIBLES
       saved: tab.saved !== false,
       model: null,
     }));
-    this.state.currentFile = editorState.currentFile || this.state.openTabs[0]?.path || null;
+    this.state.currentFile =
+      editorState.currentFile || this.state.openTabs[0]?.path || null;
     this.state.emit("tabsChanged", this.state.openTabs);
 
     if (this.state.currentFile) {
@@ -2825,7 +3071,7 @@ HERRAMIENTAS DISPONIBLES
     const limit = 32000;
     const percent = Math.round((tokens / limit) * 100);
     el.textContent = `${tokens.toLocaleString()} tokens (${percent}%)`;
-    
+
     if (percent > 85) el.style.color = "var(--error)";
     else if (percent > 65) el.style.color = "var(--warning)";
     else el.style.color = "var(--text-tertiary)";
@@ -2839,7 +3085,8 @@ HERRAMIENTAS DISPONIBLES
     const summaryPrompt = [
       {
         role: "system",
-        content: "Resume esta conversación de forma muy concisa, manteniendo solo los hechos clave y decisiones técnicas importantes.",
+        content:
+          "Resume esta conversación de forma muy concisa, manteniendo solo los hechos clave y decisiones técnicas importantes.",
       },
       {
         role: "user",
@@ -2852,7 +3099,10 @@ HERRAMIENTAS DISPONIBLES
       const res = await this.chat(summaryPrompt);
       summary = res || "Resumen no disponible.";
 
-      this.messages = [{ role: "assistant", content: `RESUMEN PREVIO: ${summary}` }, ...lastTen];
+      this.messages = [
+        { role: "assistant", content: `RESUMEN PREVIO: ${summary}` },
+        ...lastTen,
+      ];
       this.renderMessages();
     } catch (err) {
       console.warn("Error summarizing context:", err);
@@ -2899,7 +3149,9 @@ HERRAMIENTAS DISPONIBLES
     const firstUser = this.messages.find((m) => m.role === "user");
     const title = firstUser
       ? (firstUser.displayContent || firstUser.content).slice(0, 60) +
-        ((firstUser.displayContent || firstUser.content).length > 60 ? "..." : "")
+        ((firstUser.displayContent || firstUser.content).length > 60
+          ? "..."
+          : "")
       : "Sin título";
     const conv = {
       id: this.activeConversation || generateId(),
@@ -2981,7 +3233,10 @@ HERRAMIENTAS DISPONIBLES
       date: new Date().toISOString(),
     };
     const sessionPath = this.state.currentFolder + "/.ide/session.json";
-    await window.api.agentWriteFile(sessionPath, JSON.stringify(session, null, 2));
+    await window.api.agentWriteFile(
+      sessionPath,
+      JSON.stringify(session, null, 2),
+    );
   }
 
   async loadSession() {
@@ -3022,7 +3277,9 @@ HERRAMIENTAS DISPONIBLES
       const iter = this._streamIteration || 0;
       const iterText = iter > 0 ? ` (paso ${iter}/15)` : "";
       status.innerHTML = `<span class="ai-status-dot"></span>${
-        this.activeTab === "agent" ? `Agente trabajando${iterText}...` : "Generando..."
+        this.activeTab === "agent"
+          ? `Agente trabajando${iterText}...`
+          : "Generando..."
       }`;
     } else {
       sendBtn.style.display = "flex";
@@ -3061,7 +3318,8 @@ HERRAMIENTAS DISPONIBLES
           const prompt = [
             {
               role: "system",
-              content: "Eres un autocompletador de código. Provee el código para completar la línea actual. NO uses markdown, NO des explicaciones. Solo el CÓDIGO faltante.",
+              content:
+                "Eres un autocompletador de código. Provee el código para completar la línea actual. NO uses markdown, NO des explicaciones. Solo el CÓDIGO faltante.",
             },
             {
               role: "user",
@@ -3114,9 +3372,13 @@ HERRAMIENTAS DISPONIBLES
     `;
 
     const frame = wrap.querySelector(".ai-server-frame");
-    wrap.querySelector('[data-a="reload"]').onclick = () => { frame.src = frame.src; };
-    wrap.querySelector('[data-a="open"]').onclick   = () => { window.api.openExternal?.(url); };
-    wrap.querySelector('[data-a="stop"]').onclick   = async () => {
+    wrap.querySelector('[data-a="reload"]').onclick = () => {
+      frame.src = frame.src;
+    };
+    wrap.querySelector('[data-a="open"]').onclick = () => {
+      window.api.openExternal?.(url);
+    };
+    wrap.querySelector('[data-a="stop"]').onclick = async () => {
       await window.api.killServer?.(reqId);
       wrap.remove();
     };
@@ -3144,7 +3406,10 @@ HERRAMIENTAS DISPONIBLES
   showEditorDiff(filePath, oldContent, newContent) {
     this.state.openFile(filePath, newContent);
     // 300ms: let Monaco finish setting the model and rendering before decorating
-    setTimeout(() => this._applyEditorDiffDecorations(filePath, oldContent, newContent), 300);
+    setTimeout(
+      () => this._applyEditorDiffDecorations(filePath, oldContent, newContent),
+      300,
+    );
   }
 
   /**
@@ -3155,34 +3420,42 @@ HERRAMIENTAS DISPONIBLES
     const MAX = 600;
     const ol = oldLines.slice(0, MAX);
     const nl = newLines.slice(0, MAX);
-    const m = ol.length, n = nl.length;
+    const m = ol.length,
+      n = nl.length;
 
     // Build DP table (backward)
     const dp = [];
     for (let i = 0; i <= m; i++) dp[i] = new Int32Array(n + 1);
     for (let i = m - 1; i >= 0; i--) {
       for (let j = n - 1; j >= 0; j--) {
-        dp[i][j] = ol[i] === nl[j]
-          ? dp[i+1][j+1] + 1
-          : Math.max(dp[i+1][j], dp[i][j+1]);
+        dp[i][j] =
+          ol[i] === nl[j]
+            ? dp[i + 1][j + 1] + 1
+            : Math.max(dp[i + 1][j], dp[i][j + 1]);
       }
     }
 
     const ops = [];
-    let i = 0, j = 0;
+    let i = 0,
+      j = 0;
     while (i < m && j < n) {
       if (ol[i] === nl[j]) {
-        ops.push({ type: "eq",  text: nl[j] }); i++; j++;
-      } else if (dp[i+1][j] >= dp[i][j+1]) {
-        ops.push({ type: "del", text: ol[i] }); i++;
+        ops.push({ type: "eq", text: nl[j] });
+        i++;
+        j++;
+      } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+        ops.push({ type: "del", text: ol[i] });
+        i++;
       } else {
-        ops.push({ type: "add", text: nl[j] }); j++;
+        ops.push({ type: "add", text: nl[j] });
+        j++;
       }
     }
     while (i < m) ops.push({ type: "del", text: ol[i++] });
     while (j < n) ops.push({ type: "add", text: nl[j++] });
     // Lines beyond MAX treated as additions
-    for (let k = MAX; k < newLines.length; k++) ops.push({ type: "add", text: newLines[k] });
+    for (let k = MAX; k < newLines.length; k++)
+      ops.push({ type: "add", text: newLines[k] });
     return ops;
   }
 
@@ -3190,7 +3463,7 @@ HERRAMIENTAS DISPONIBLES
     const editor = this.state.editorInstance;
     if (!editor) return;
     // Normalize slashes for cross-platform path comparison
-    const norm = p => (p || "").replace(/\\/g, "/").toLowerCase();
+    const norm = (p) => (p || "").replace(/\\/g, "/").toLowerCase();
     if (norm(this.state.currentFile) !== norm(filePath)) return;
     const model = editor.getModel();
     if (!model) return;
@@ -3207,7 +3480,7 @@ HERRAMIENTAS DISPONIBLES
     const minimapInline = window.monaco?.editor?.MinimapPosition?.Inline ?? 1;
     const overviewLeft = window.monaco?.editor?.OverviewRulerLane?.Left ?? 1;
 
-    let newLine = 0;      // 1-based current position in new content
+    let newLine = 0; // 1-based current position in new content
     let pendingDels = [];
 
     const flushDels = () => {
@@ -3227,7 +3500,8 @@ HERRAMIENTAS DISPONIBLES
       } else if (op.type === "eq") {
         flushDels();
         newLine++;
-      } else { // add
+      } else {
+        // add
         flushDels();
         newLine++;
         decorations.push({
@@ -3258,7 +3532,10 @@ HERRAMIENTAS DISPONIBLES
 
     // Apply line decorations
     if (this._editorDiffDecos) {
-      this._editorDiffDecos = editor.deltaDecorations(this._editorDiffDecos, decorations);
+      this._editorDiffDecos = editor.deltaDecorations(
+        this._editorDiffDecos,
+        decorations,
+      );
     } else {
       this._editorDiffDecos = editor.deltaDecorations([], decorations);
     }
@@ -3267,7 +3544,8 @@ HERRAMIENTAS DISPONIBLES
     this._applyDiffZones(editor, delZones);
 
     // Count real adds/dels for the bar stats
-    let added = 0, removed = 0;
+    let added = 0,
+      removed = 0;
     for (const op of ops) {
       if (op.type === "add") added++;
       else if (op.type === "del") removed++;
@@ -3278,37 +3556,44 @@ HERRAMIENTAS DISPONIBLES
   _applyDiffZones(editor, delZones) {
     // Remove old zones
     if (this._editorDiffZones && this._editorDiffZones.length) {
-      editor.changeViewZones(acc => {
-        this._editorDiffZones.forEach(id => acc.removeZone(id));
+      editor.changeViewZones((acc) => {
+        this._editorDiffZones.forEach((id) => acc.removeZone(id));
       });
     }
     this._editorDiffZones = [];
     if (!delZones.length) return;
 
     // Safe fallbacks — EditorOption enum keys may not survive minification
-    let contentLeft = 60, lineHeight = 19, fontSize = 13;
+    let contentLeft = 60,
+      lineHeight = 19,
+      fontSize = 13;
     let fontFamily = "Menlo, Monaco, Consolas, 'Courier New', monospace";
-    try { contentLeft = editor.getLayoutInfo().contentLeft || 60; } catch {}
+    try {
+      contentLeft = editor.getLayoutInfo().contentLeft || 60;
+    } catch {}
     try {
       const EO = window.monaco?.editor?.EditorOption;
       if (EO) {
-        const lh = editor.getOption(EO.lineHeight); if (lh > 0) lineHeight = lh;
-        const fs = editor.getOption(EO.fontSize);   if (fs > 0) fontSize   = fs;
-        const ff = editor.getOption(EO.fontFamily); if (ff)     fontFamily = ff;
+        const lh = editor.getOption(EO.lineHeight);
+        if (lh > 0) lineHeight = lh;
+        const fs = editor.getOption(EO.fontSize);
+        if (fs > 0) fontSize = fs;
+        const ff = editor.getOption(EO.fontFamily);
+        if (ff) fontFamily = ff;
       }
     } catch {}
 
-    editor.changeViewZones(acc => {
+    editor.changeViewZones((acc) => {
       for (const { afterLine, texts } of delZones) {
         for (const text of texts) {
           // Content area node (the red line)
           const domNode = document.createElement("div");
           domNode.className = "editor-diff-del-zone";
-          domNode.style.height        = lineHeight + "px";
-          domNode.style.lineHeight    = lineHeight + "px";
-          domNode.style.paddingLeft   = contentLeft + "px";
-          domNode.style.fontSize      = fontSize + "px";
-          domNode.style.fontFamily    = fontFamily;
+          domNode.style.height = lineHeight + "px";
+          domNode.style.lineHeight = lineHeight + "px";
+          domNode.style.paddingLeft = contentLeft + "px";
+          domNode.style.fontSize = fontSize + "px";
+          domNode.style.fontFamily = fontFamily;
 
           const inner = document.createElement("span");
           inner.className = "editor-diff-del-zone-text";
@@ -3318,7 +3603,7 @@ HERRAMIENTAS DISPONIBLES
           // Gutter node (shows the − glyph)
           const marginDom = document.createElement("div");
           marginDom.className = "editor-diff-del-glyph";
-          marginDom.style.height     = lineHeight + "px";
+          marginDom.style.height = lineHeight + "px";
           marginDom.style.lineHeight = lineHeight + "px";
 
           const zoneId = acc.addZone({
@@ -3353,7 +3638,8 @@ HERRAMIENTAS DISPONIBLES
       </div>
     `;
 
-    bar.querySelector(".editor-diff-btn--accept").onclick = () => this._clearEditorDiff();
+    bar.querySelector(".editor-diff-btn--accept").onclick = () =>
+      this._clearEditorDiff();
 
     bar.querySelector(".editor-diff-btn--reject").onclick = async () => {
       try {
@@ -3382,11 +3668,14 @@ HERRAMIENTAS DISPONIBLES
     const editor = this.state.editorInstance;
     if (editor) {
       if (this._editorDiffDecos) {
-        this._editorDiffDecos = editor.deltaDecorations(this._editorDiffDecos, []);
+        this._editorDiffDecos = editor.deltaDecorations(
+          this._editorDiffDecos,
+          [],
+        );
       }
       if (this._editorDiffZones && this._editorDiffZones.length) {
-        editor.changeViewZones(acc => {
-          this._editorDiffZones.forEach(id => acc.removeZone(id));
+        editor.changeViewZones((acc) => {
+          this._editorDiffZones.forEach((id) => acc.removeZone(id));
         });
       }
     }
@@ -3426,7 +3715,12 @@ HERRAMIENTAS DISPONIBLES
       } else if (line.startsWith("-") && !line.startsWith("---")) {
         // Para eliminaciones, resaltamos la línea actual o la siguiente
         decorations.push({
-          range: new window.monaco.Range(currentLine + 1, 1, currentLine + 1, 1),
+          range: new window.monaco.Range(
+            currentLine + 1,
+            1,
+            currentLine + 1,
+            1,
+          ),
           options: {
             isWholeLine: true,
             className: "ai-diff-line-removed",
@@ -3455,6 +3749,3 @@ HERRAMIENTAS DISPONIBLES
 export function createAIAgent(container, state) {
   return new AIAgent({ container, state }).mount();
 }
-
-
-

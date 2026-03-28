@@ -135,6 +135,7 @@ export function createSidebar(container, state) {
         // Actualizar estado global
         state.currentFolder = folderPath
         state.emit('folderChanged', folderPath)
+        state.emit('projectFolderChanged', folderPath)
       },
       onFileSave: (filePath, content) => {
         // Guardar archivo (implementar si es necesario)

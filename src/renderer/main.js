@@ -68,7 +68,7 @@ function buildWelcome() {
       <div class="welcome-shortcuts">
         <div class="ws-row"><kbd>Ctrl+L</kbd><span>Enviar c&#243;digo al chat IA</span></div>
         <div class="ws-row"><kbd>Ctrl+K</kbd><span>Edici&#243;n inline con IA</span></div>
-        <div class="ws-row"><kbd>Ctrl+&#96;</kbd><span>Abrir terminal</span></div>
+        <div class="ws-row"><kbd>Ctrl+Ñ</kbd><span>Abrir terminal</span></div>
         <div class="ws-row"><kbd>Ctrl+Shift+F</kbd><span>Buscar en archivos</span></div>
         <div class="ws-row"><kbd>Ctrl+W</kbd><span>Cerrar tab</span></div>
       </div>
@@ -146,6 +146,7 @@ applyResponsivePanelSizing()
 // ── Aplicar estado inicial de paneles ───────────────────────────────────────────
 document.getElementById('ai-panel').style.display = state.aiPanelOpen ? 'flex' : 'none'
 document.getElementById('resize-ai').style.display = state.aiPanelOpen ? 'block' : 'none'
+document.getElementById('terminal').style.display = state.terminalOpen ? 'flex' : 'none'
 
 // ── Terminal (lazy — solo se crea al abrir) ──────────────────────────────────
 let terminalCreated = false
@@ -292,6 +293,7 @@ document.getElementById('wb-open')?.addEventListener('click', async () => {
   const folder = await window.api.openFolder()
   if (folder) {
     state.currentFolder = folder
+    state.emit('projectFolderChanged', folder)
     state.emit('refreshTree')
   }
 })
@@ -313,6 +315,7 @@ window.api.onMenu(async (event) => {
       const folder = await window.api.openFolder()
       if (folder) { 
         state.currentFolder = folder; 
+        state.emit('projectFolderChanged', folder);
         state.emit('refreshTree');
         window.api.sendProjectRoot(folder);
       }
@@ -390,7 +393,10 @@ document.addEventListener('keydown', async (e) => {
 
   if (e.altKey && e.key === 'I')                  { e.preventDefault(); toggleAI(); return }
   if (e.shiftKey && e.key === 'L')                { e.preventDefault(); toggleAI(); return }
-  if (e.key === '`')                              { e.preventDefault(); toggleTerminal(); return }
+  
+  const isTermKey = ['`', 'ñ', 'Ñ', ']', ';', '}'].includes(e.key) || ['Backquote', 'Semicolon', 'BracketRight'].includes(e.code);
+  if (isTermKey) { e.preventDefault(); toggleTerminal(); return }
+  
   if (e.key === 'b' && !e.shiftKey && !e.altKey) { e.preventDefault(); toggleExplorer(); return }
   if (e.shiftKey && e.key === 'B')                { e.preventDefault(); closeExplorer(); return }
   if (e.shiftKey && e.key === 'E')                { e.preventDefault(); document.querySelector('[data-panel="explorer"]')?.click(); return }

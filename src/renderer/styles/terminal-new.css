@@ -1,6 +1,5 @@
 /* src/renderer/styles/terminal-new.css */
 .ide-terminal {
-  display: flex !important;
   flex-direction: column;
   background: var(--bg1, #0a0a0a);
   border-top: 1px solid var(--bg4, #262626);
@@ -8,7 +7,6 @@
   min-height: 150px;
   position: relative;
   overflow: hidden;
-  transition: height 0.2s ease;
 }
 
 .term-header {
