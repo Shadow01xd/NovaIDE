@@ -22,6 +22,9 @@
     "diff": "^8.0.4",
     "fs-extra": "^11.3.4",
     "node-pty": "^1.0.0",
+    "pyright": "^1.1.390",
+    "typescript": "^5.5.4",
+    "typescript-language-server": "^4.3.3",
     "vscode-marketplace-client": "^1.1.1",
     "yauzl": "^3.2.1"
   },

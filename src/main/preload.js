@@ -35,6 +35,15 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('ai:token', wrapped)
   },
 
+  // LSP
+  lspStart: (languageId) => ipcRenderer.invoke('lsp:start', { languageId }),
+  lspDidOpen: (payload) => ipcRenderer.invoke('lsp:didOpen', payload),
+  lspDidChange: (payload) => ipcRenderer.invoke('lsp:didChange', payload),
+  lspDidClose: (payload) => ipcRenderer.invoke('lsp:didClose', payload),
+  lspCompletion: (payload) => ipcRenderer.invoke('lsp:completion', payload),
+  lspHover: (payload) => ipcRenderer.invoke('lsp:hover', payload),
+  lspDefinition: (payload) => ipcRenderer.invoke('lsp:definition', payload),
+
   // Terminal
   termCreate: (id, cwd)    => ipcRenderer.invoke('terminal:create', { id, cwd }),
   termWrite:  (id, data)   => ipcRenderer.send('terminal:write', { id, data }),

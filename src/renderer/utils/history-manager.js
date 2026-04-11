@@ -82,7 +82,7 @@ export class HistoryManager {
 
     // Persistencia automática en disco
     if (window.api?.historySave) {
-      window.api.historySave({ filePath, history: { stack: history.stack, index: history.index } })
+      // Guardado inmediato desactivado: el editor ya persiste con debounce.
     }
   }
 

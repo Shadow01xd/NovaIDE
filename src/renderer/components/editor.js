@@ -1487,8 +1487,8 @@ let aiDecorations = []
 let themeManager = null
 
 export async function createEditor(container, state, themeMgr = null) {
-  await window.monacoReady
   const monaco = window.monaco
+  if (!monaco) throw new Error('Monaco no cargado')
   state.monacoRef = monaco
   
   const snippetManager = new SnippetManager(monaco);
@@ -1587,6 +1587,283 @@ export async function createEditor(container, state, themeMgr = null) {
   // Guardar instancia global para acceso desde otros componentes
   window.__editorInstance = editor
 
+  const lspVersions = new Map()
+  const lspDidChangeTimers = new Map()
+  const lspOpenedFiles = new Set()
+
+  function filePathToFileUri(filePath) {
+    let out = String(filePath || '').replace(/\\/g, '/')
+    if (!out) return ''
+    if (!out.startsWith('/')) out = '/' + out
+    return 'file://' + encodeURI(out)
+  }
+
+  function fileUriToFilePath(uri) {
+    try {
+      const u = String(uri || '')
+      if (!u.startsWith('file://')) return null
+      const decoded = decodeURI(u.replace(/^file:\/\//, ''))
+      const cleaned = decoded.startsWith('/') ? decoded.slice(1) : decoded
+      return cleaned.replace(/\//g, '\\')
+    } catch {
+      return null
+    }
+  }
+
+  function filePathToInMemoryUri(filePath) {
+    return monaco.Uri.parse('inmemory:///' + String(filePath).replace(/\\/g, '/'))
+  }
+
+  function modelUriToFilePath(model) {
+    const uri = model?.uri
+    if (!uri || uri.scheme !== 'inmemory') return state.currentFile || ''
+    const rawPath = decodeURIComponent(uri.path || '').replace(/^\/+/, '')
+    return rawPath.replace(/\//g, '\\')
+  }
+
+  function ensureLspStarted(languageId) {
+    if (!window.api?.lspStart) return
+    window.api.lspStart(languageId).catch(() => {})
+  }
+
+  async function lspDidOpenForFile(filePath, model) {
+    if (!window.api?.lspDidOpen) return
+    if (!filePath || lspOpenedFiles.has(filePath)) return
+    const languageId = model.getLanguageId()
+    ensureLspStarted(languageId)
+    const prev = lspVersions.get(filePath) || 0
+    const version = prev + 1
+    lspVersions.set(filePath, version)
+    const uri = filePathToFileUri(filePath)
+    await window.api.lspDidOpen({ uri, languageId, text: model.getValue(), version })
+    lspOpenedFiles.add(filePath)
+  }
+
+  function lspDidChangeForFileDebounced(filePath, model) {
+    if (!window.api?.lspDidChange) return
+    if (!filePath) return
+    const languageId = model.getLanguageId()
+    ensureLspStarted(languageId)
+
+    const existing = lspDidChangeTimers.get(filePath)
+    if (existing) clearTimeout(existing)
+
+    const t = setTimeout(async () => {
+      const prev = lspVersions.get(filePath) || 0
+      const version = prev + 1
+      lspVersions.set(filePath, version)
+      const uri = filePathToFileUri(filePath)
+      try {
+        await window.api.lspDidChange({ uri, languageId, text: model.getValue(), version })
+      } catch {}
+    }, 180)
+    lspDidChangeTimers.set(filePath, t)
+  }
+
+  async function ensureModelForFilePath(filePath) {
+    if (!filePath) return null
+    const uri = filePathToInMemoryUri(filePath)
+    let model = monaco.editor.getModel(uri)
+    if (model) return model
+    try {
+      const content = await window.api.readFile(filePath)
+      const lang = getLang(filePath)
+      model = monaco.editor.createModel(content, lang, uri)
+      try { await lspDidOpenForFile(filePath, model) } catch {}
+      return model
+    } catch {
+      return null
+    }
+  }
+
+  function lspCompletionItemKindToMonaco(kind) {
+    const k = Number(kind || 0)
+    const map = {
+      1: monaco.languages.CompletionItemKind.Text,
+      2: monaco.languages.CompletionItemKind.Method,
+      3: monaco.languages.CompletionItemKind.Function,
+      4: monaco.languages.CompletionItemKind.Constructor,
+      5: monaco.languages.CompletionItemKind.Field,
+      6: monaco.languages.CompletionItemKind.Variable,
+      7: monaco.languages.CompletionItemKind.Class,
+      8: monaco.languages.CompletionItemKind.Interface,
+      9: monaco.languages.CompletionItemKind.Module,
+      10: monaco.languages.CompletionItemKind.Property,
+      11: monaco.languages.CompletionItemKind.Unit,
+      12: monaco.languages.CompletionItemKind.Value,
+      13: monaco.languages.CompletionItemKind.Enum,
+      14: monaco.languages.CompletionItemKind.Keyword,
+      15: monaco.languages.CompletionItemKind.Snippet,
+      16: monaco.languages.CompletionItemKind.Color,
+      17: monaco.languages.CompletionItemKind.File,
+      18: monaco.languages.CompletionItemKind.Reference,
+      19: monaco.languages.CompletionItemKind.Folder,
+      20: monaco.languages.CompletionItemKind.EnumMember,
+      21: monaco.languages.CompletionItemKind.Constant,
+      22: monaco.languages.CompletionItemKind.Struct,
+      23: monaco.languages.CompletionItemKind.Event,
+      24: monaco.languages.CompletionItemKind.Operator,
+      25: monaco.languages.CompletionItemKind.TypeParameter,
+    }
+    return map[k] || monaco.languages.CompletionItemKind.Text
+  }
+
+  function lspRangeToMonacoRange(r) {
+    if (!r?.start || !r?.end) return null
+    return new monaco.Range(
+      (r.start.line ?? 0) + 1,
+      (r.start.character ?? 0) + 1,
+      (r.end.line ?? 0) + 1,
+      (r.end.character ?? 0) + 1,
+    )
+  }
+
+  function lspEditRangeToMonacoRange(textEdit, fallbackRange) {
+    if (!textEdit) return fallbackRange
+    if (textEdit.range) return lspRangeToMonacoRange(textEdit.range) || fallbackRange
+    if (textEdit.insert && textEdit.replace) {
+      return lspRangeToMonacoRange(textEdit.insert) || lspRangeToMonacoRange(textEdit.replace) || fallbackRange
+    }
+    return fallbackRange
+  }
+
+  function lspMarkedStringToMarkdown(contents) {
+    if (!contents) return { value: '' }
+    if (typeof contents === 'string') return { value: contents }
+    if (Array.isArray(contents)) {
+      const parts = contents
+        .map((c) => {
+          if (!c) return ''
+          if (typeof c === 'string') return c
+          if (c.value) return c.value
+          return ''
+        })
+        .filter(Boolean)
+      return { value: parts.join('\n\n') }
+    }
+    if (contents.value) return { value: contents.value }
+    return { value: '' }
+  }
+
+  function getAiApiKey(aiModel) {
+    if (!aiModel) return ''
+    if (aiModel.includes('deepseek')) return localStorage.getItem('ide_deepseek_api_key') || ''
+    if (aiModel.includes('llama') || aiModel.includes('groq')) return localStorage.getItem('ide_groq_api_key') || ''
+    return ''
+  }
+
+  const lspLanguages = ['typescript', 'javascript', 'typescriptreact', 'javascriptreact', 'python', 'c', 'cpp']
+
+  for (const langId of lspLanguages) {
+    monaco.languages.registerCompletionItemProvider(langId, {
+      triggerCharacters: ['.', ':', '>', '/', '"', "'", '(', '['],
+      provideCompletionItems: async (model, position) => {
+        if (!window.api?.lspCompletion) return { suggestions: [] }
+        const filePath = modelUriToFilePath(model)
+        if (!filePath) return { suggestions: [] }
+        const uri = filePathToFileUri(filePath)
+
+        try {
+          const resp = await window.api.lspCompletion({ uri, languageId: model.getLanguageId(), position })
+          if (!resp?.ok) return { suggestions: [] }
+          const result = resp.result
+          const items = Array.isArray(result) ? result : result?.items || []
+
+          const word = model.getWordUntilPosition(position)
+          const range = new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn)
+
+          let suggestions = items
+            .map((it) => {
+              const label = typeof it.label === 'string' ? it.label : (it.label?.label || '')
+              const insertText = it.insertText || it.textEdit?.newText || label
+              const editRange = lspEditRangeToMonacoRange(it.textEdit, range)
+              const isSnippet = it.insertTextFormat === 2
+              return {
+                label,
+                kind: lspCompletionItemKindToMonaco(it.kind),
+                detail: it.detail || '',
+                documentation: it.documentation?.value || it.documentation || '',
+                insertText,
+                range: editRange || range,
+                filterText: it.filterText || label,
+                sortText: it.sortText,
+                preselect: Boolean(it.preselect),
+                commitCharacters: Array.isArray(it.commitCharacters) ? it.commitCharacters : undefined,
+                insertTextRules: isSnippet
+                  ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+                  : monaco.languages.CompletionItemInsertTextRule.KeepWhitespace,
+              }
+            })
+            .filter((s) => s.label)
+
+
+
+          return { suggestions }
+        } catch {
+          return { suggestions: [] }
+        }
+      },
+    })
+
+    monaco.languages.registerHoverProvider(langId, {
+      provideHover: async (model, position) => {
+        if (!window.api?.lspHover) return null
+        const filePath = modelUriToFilePath(model)
+        if (!filePath) return null
+        const uri = filePathToFileUri(filePath)
+        try {
+          const resp = await window.api.lspHover({ uri, languageId: model.getLanguageId(), position })
+          if (!resp?.ok || !resp.result) return null
+          const result = resp.result
+          const range = result.range ? lspRangeToMonacoRange(result.range) : null
+          const contents = lspMarkedStringToMarkdown(result.contents)
+          if (!contents?.value) return null
+          return {
+            range: range || undefined,
+            contents: [contents],
+          }
+        } catch {
+          return null
+        }
+      },
+    })
+
+    monaco.languages.registerDefinitionProvider(langId, {
+      provideDefinition: async (model, position) => {
+        if (!window.api?.lspDefinition) return null
+        const filePath = modelUriToFilePath(model)
+        if (!filePath) return null
+        const uri = filePathToFileUri(filePath)
+        try {
+          const resp = await window.api.lspDefinition({ uri, languageId: model.getLanguageId(), position })
+          if (!resp?.ok || !resp.result) return null
+          const res = resp.result
+          const locs = Array.isArray(res) ? res : [res]
+
+          const out = []
+          for (const loc of locs) {
+            const targetUri = loc?.uri
+            const targetRange = loc?.range
+            if (!targetUri || !targetRange) continue
+            const targetPath = fileUriToFilePath(targetUri)
+            if (!targetPath) continue
+
+            await ensureModelForFilePath(targetPath)
+
+            out.push({
+              uri: filePathToInMemoryUri(targetPath),
+              range: lspRangeToMonacoRange(targetRange),
+            })
+          }
+
+          return out.length ? out : null
+        } catch {
+          return null
+        }
+      },
+    })
+  }
+
   // ── Configurar colores para Ghost Text ─────────────────────────────────────
   // Asegurar que el ghost text sea visible
   monaco.editor.defineTheme('ghost-text-theme', {
@@ -1607,7 +1884,7 @@ export async function createEditor(container, state, themeMgr = null) {
   }
 
   // ── Proveedor de autocompletado con IA ────────────────────────────────
-  registerInlineGhostProviders(monaco, state)
+  registerInlineGhostProvidersV2(monaco, state)
   registerHtmlSnippetCompletions(monaco)
   
   // ── Configurar soporte completo para lenguajes ─────────────────────────────
@@ -1627,6 +1904,9 @@ export async function createEditor(container, state, themeMgr = null) {
   editor.onDidChangeModelContent((e) => {
     if (state.currentFile) {
       state.markDirty(state.currentFile)
+
+      const model = editor.getModel()
+      if (model) lspDidChangeForFileDebounced(state.currentFile, model)
       
       // Capturar estado para el historial
       const currentFile = state.currentFile
@@ -1679,11 +1959,6 @@ export async function createEditor(container, state, themeMgr = null) {
       console.log('[editor] Triggering inline completion...')
       editor.trigger('keyboard', 'editor.action.inlineSuggest.trigger', {})
     }, 200)
-  })
-
-  // Aceptar ghost text con Tab
-  editor.addCommand(monaco.KeyCode.Tab, () => {
-    editor.trigger('keyboard', 'editor.action.inlineSuggest.commit', {})
   })
 
   // Trigger manual con Ctrl+Espacio (opcional)
@@ -1765,9 +2040,9 @@ export async function createEditor(container, state, themeMgr = null) {
     }
   })
 
-  // Auto-formateo al pulsar Tab
+  // Desactivado: interfería con Monaco al aceptar sugerencias, snippets e indentación con Tab.
   editor.onKeyDown(async (e) => {
-    if (e.keyCode === monaco.KeyCode.Tab && !e.shiftKey && !e.ctrlKey && !e.altKey) {
+    if (false && e.keyCode === monaco.KeyCode.Tab && !e.shiftKey && !e.ctrlKey && !e.altKey) {
       const position = editor.getPosition()
       const model = editor.getModel()
       if (!model) return
@@ -1848,6 +2123,8 @@ export async function createEditor(container, state, themeMgr = null) {
       monaco.editor.setModelLanguage(model, lang)
     }
     editor.setModel(model)
+
+    lspDidOpenForFile(filePath, model).catch(() => {})
     
     // Configurar el editor específicamente para este lenguaje
     configureEditorForLanguage(editor, lang, filePath)
@@ -2268,9 +2545,7 @@ function setupTypeScriptAndJSX(monaco) {
 
 // ── INLINE COMPLETION PROVIDERS (Ghost Text IA) ────────────────────────────
 function registerInlineGhostProviders(monaco, state) {
-  console.log('[Ghost Text] Registering aggressive inline providers...')
-  
-  // === INLINE COMPLETION PROVIDER (Ghost Text IA) ===
+  console.log('[Ghost Text] Registering inline providers...')
   const inlineLanguages = [
     'plaintext', 'javascript', 'typescript', 'python', 'go', 'java', 'php',
     'csharp', 'cpp', 'html', 'css', 'json', 'markdown',
@@ -2278,9 +2553,73 @@ function registerInlineGhostProviders(monaco, state) {
   ]
 
   let currentRequest = null
-  let lastPosition = null
-  let lastSuggestion = ''
   let debounceTimer = null
+  let lastKey = ''
+  let lastSuggestion = ''
+  let lastRejectKey = ''
+  let lastRejectAt = 0
+
+  function modelToFilePath(model) {
+    const uri = model?.uri
+    if (uri?.scheme === 'inmemory') {
+      return decodeURIComponent(uri.path || '').replace(/^\/+/, '').replace(/\//g, '\\')
+    }
+    return state.currentFile || ''
+  }
+
+  function getImmediateContext(model, position) {
+    const line = model.getLineContent(position.lineNumber)
+    return {
+      line,
+      beforeCursor: line.slice(0, position.column - 1),
+      afterCursor: line.slice(position.column - 1),
+    }
+  }
+
+  function shouldTriggerGhostText(model, context) {
+    const { beforeCursor, afterCursor } = context
+    if (!beforeCursor || !beforeCursor.trim()) return false
+
+    const language = model.getLanguageId()
+    const trimmed = beforeCursor.trim()
+    const prevChar = beforeCursor.slice(-1)
+    const nextChar = afterCursor.slice(0, 1)
+
+    if (/^[\]\)\}\>,;]$/.test(prevChar)) return false
+    if (trimmed.length < 2 && !/[.\(<{"'`[]/.test(prevChar)) return false
+    if (/^\s+$/.test(afterCursor)) return false
+    if (language === 'markdown' && /^#{1,6}\s*$/.test(trimmed)) return false
+    if (/^\s*(\/\/|#|\*)/.test(trimmed) && !/[=:(,'"`[{.]$/.test(prevChar)) return false
+    if (nextChar && /\w/.test(prevChar) && /\w/.test(nextChar)) return false
+
+    return true
+  }
+
+  function buildGhostKey(model, position) {
+    const totalText = model.getValue()
+    const offset = model.getOffsetAt(position)
+    const prefix = totalText.slice(Math.max(0, offset - 600), offset)
+    const suffix = totalText.slice(offset, Math.min(totalText.length, offset + 180))
+    return `${model.getLanguageId()}::${position.lineNumber}:${position.column}::${prefix}@@${suffix}`
+  }
+
+  function createInlineResult(insertText, position, detail) {
+    return {
+      items: [{
+        insertText,
+        range: new monaco.Range(
+          position.lineNumber,
+          position.column,
+          position.lineNumber,
+          position.column
+        ),
+        isInlineCompletion: true,
+        kind: monaco.languages.CompletionItemKind.Text,
+        detail
+      }],
+      dispose() {},
+    }
+  }
 
   for (const lang of inlineLanguages) {
     monaco.languages.registerInlineCompletionsProvider(lang, {
@@ -2534,6 +2873,222 @@ function registerInlineGhostProviders(monaco, state) {
 }
 
 // ── HTML snippets estilo Emmet básico ────────────────────────────────────
+function registerInlineGhostProvidersV2(monaco, state) {
+  console.log('[Ghost Text] Registering Cursor-style inline providers...')
+
+  const inlineLanguages = [
+    'plaintext', 'javascript', 'typescript', 'python', 'go', 'java', 'php',
+    'csharp', 'cpp', 'html', 'css', 'json', 'markdown',
+    'shell', 'sql', 'yaml', 'rust', 'javascriptreact', 'typescriptreact'
+  ]
+
+  let currentRequest = null
+  let debounceTimer = null
+  let lastKey = ''
+  let lastSuggestion = ''
+  let lastRejectKey = ''
+  let lastRejectAt = 0
+
+  function modelToFilePath(model) {
+    const uri = model?.uri
+    if (uri?.scheme === 'inmemory') {
+      return decodeURIComponent(uri.path || '').replace(/^\/+/, '').replace(/\//g, '\\')
+    }
+    return state.currentFile || ''
+  }
+
+  function getImmediateContext(model, position) {
+    const line = model.getLineContent(position.lineNumber)
+    return {
+      beforeCursor: line.slice(0, position.column - 1),
+      afterCursor: line.slice(position.column - 1),
+    }
+  }
+
+  function resolveInlineApiKey(aiModel) {
+    if (!aiModel) return ''
+    if (aiModel.includes('deepseek')) return localStorage.getItem('ide_deepseek_api_key') || ''
+    if (aiModel.includes('llama') || aiModel.includes('groq')) return localStorage.getItem('ide_groq_api_key') || ''
+    return ''
+  }
+
+  function shouldTriggerGhostText(model, context) {
+    const { beforeCursor, afterCursor } = context
+    if (!beforeCursor || !beforeCursor.trim()) return false
+
+    const language = model.getLanguageId()
+    const trimmed = beforeCursor.trim()
+    const prevChar = beforeCursor.slice(-1)
+    const nextChar = afterCursor.slice(0, 1)
+
+    if (/^[\]\)\}\>,;]$/.test(prevChar)) return false
+    if (trimmed.length < 2 && !/[.\(<{"'`[]/.test(prevChar)) return false
+    if (/^\s+$/.test(afterCursor)) return false
+    if (language === 'markdown' && /^#{1,6}\s*$/.test(trimmed)) return false
+    if (/^\s*(\/\/|#|\*)/.test(trimmed) && !/[=:(,'\"`[{.]$/.test(prevChar)) return false
+    if (nextChar && /\w/.test(prevChar) && /\w/.test(nextChar)) return false
+
+    return true
+  }
+
+  function buildGhostKey(model, position) {
+    const totalText = model.getValue()
+    const offset = model.getOffsetAt(position)
+    const prefix = totalText.slice(Math.max(0, offset - 600), offset)
+    const suffix = totalText.slice(offset, Math.min(totalText.length, offset + 180))
+    return `${model.getLanguageId()}::${position.lineNumber}:${position.column}::${prefix}@@${suffix}`
+  }
+
+  function createInlineResult(insertText, position, detail) {
+    return {
+      items: [{
+        insertText,
+        range: new monaco.Range(
+          position.lineNumber,
+          position.column,
+          position.lineNumber,
+          position.column
+        ),
+        isInlineCompletion: true,
+        kind: monaco.languages.CompletionItemKind.Text,
+        detail
+      }],
+      dispose() {},
+    }
+  }
+
+  for (const lang of inlineLanguages) {
+    monaco.languages.registerInlineCompletionsProvider(lang, {
+      provideInlineCompletions: async (model, position, context, token) => {
+        try {
+          const key = buildGhostKey(model, position)
+          if (key === lastKey && lastSuggestion) {
+            return createInlineResult(lastSuggestion, position, 'AI Suggestion (cached)')
+          }
+
+          if (key === lastRejectKey && (Date.now() - lastRejectAt) < 1200) {
+            return { items: [], dispose() {} }
+          }
+
+          const immediate = getImmediateContext(model, position)
+          if (!shouldTriggerGhostText(model, immediate)) {
+            return { items: [], dispose() {} }
+          }
+
+          if (currentRequest) {
+            currentRequest.cancelled = true
+            currentRequest = null
+          }
+          if (debounceTimer) clearTimeout(debounceTimer)
+
+          return new Promise((resolve) => {
+            const language = model.getLanguageId()
+            const debounceMs = language === 'html' ? 170 : 110
+
+            debounceTimer = setTimeout(async () => {
+              try {
+                if (token.isCancellationRequested) {
+                  resolve({ items: [], dispose() {} })
+                  return
+                }
+
+                const totalText = model.getValue()
+                const offset = model.getOffsetAt(position)
+                const contextSize = language === 'html' ? 6500 : 4500
+                const suffixLen = language === 'html' ? 1400 : 900
+                const prefix = totalText.slice(Math.max(0, offset - contextSize), offset)
+                const suffix = totalText.slice(offset, Math.min(totalText.length, offset + suffixLen))
+                const filePath = modelToFilePath(model)
+                const currentLineNum = position.lineNumber
+                const startLine = Math.max(1, currentLineNum - 45)
+                const endLine = Math.min(model.getLineCount(), currentLineNum + 28)
+
+                let extendedContext = ''
+                for (let i = startLine; i <= endLine; i++) {
+                  extendedContext += model.getLineContent(i) + '\n'
+                }
+
+                const aiModel = state.aiModel || 'deepseek-chat'
+                const apiKey = resolveInlineApiKey(aiModel)
+                if (!apiKey) {
+                  lastRejectKey = key
+                  lastRejectAt = Date.now()
+                  resolve({ items: [], dispose() {} })
+                  return
+                }
+
+                const structuralContext = buildStructuralContext(model, position, language)
+                const requestObj = { cancelled: false, key }
+                currentRequest = requestObj
+
+                const suggestion = await withTimeout(
+                  window.api.aiInlineComplete({
+                    model: aiModel,
+                    prefix,
+                    suffix,
+                    extendedContext,
+                    language,
+                    filePath,
+                    currentLine: currentLineNum,
+                    beforeCursor: immediate.beforeCursor,
+                    structuralContext,
+                    apiKey,
+                  }),
+                  12000
+                )
+
+                if (requestObj.cancelled || token.isCancellationRequested) {
+                  resolve({ items: [], dispose() {} })
+                  return
+                }
+
+                if (currentRequest === requestObj) currentRequest = null
+
+                let cleaned = sanitizeInlineCompletion(
+                  suggestion,
+                  immediate.beforeCursor,
+                  language,
+                  suffix,
+                  structuralContext
+                )
+
+                if (cleaned && cleaned.length > 1200) {
+                  cleaned = cleaned.slice(0, 1200)
+                }
+
+                if (!cleaned || !cleaned.trim()) {
+                  lastRejectKey = key
+                  lastRejectAt = Date.now()
+                  resolve({ items: [], dispose() {} })
+                  return
+                }
+
+                lastKey = key
+                lastSuggestion = cleaned
+                resolve(createInlineResult(cleaned, position, 'AI Suggestion'))
+              } catch (err) {
+                if (currentRequest?.key === key) currentRequest = null
+                lastRejectKey = key
+                lastRejectAt = Date.now()
+                console.error('[Ghost Text] V2 error:', err)
+                resolve({ items: [], dispose() {} })
+              }
+            }, debounceMs)
+          })
+        } catch (err) {
+          console.error('[Ghost Text] V2 provider error:', err)
+          return { items: [], dispose() {} }
+        }
+      },
+
+      freeInlineCompletions() {
+        lastKey = ''
+        lastSuggestion = ''
+      },
+    })
+  }
+}
+
 function registerHtmlSnippetCompletions(monaco) {
   const htmlSnippets = {
     html: '<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n  <title>$1</title>\n</head>\n<body>\n  $0\n</body>\n</html>',

@@ -5,6 +5,7 @@ const fs   = require('fs')
 const os   = require('os')
 const { applyUnifiedDiff } = require('./tools/apply-diff')
 const { isCommandAllowed } = require('./security/command-whitelist')
+const { LspManager } = require('./lsp/lsp-manager')
 
 const VITE_DEV_URL = 'http://localhost:5173'
 async function isViteRunning() {
@@ -23,6 +24,8 @@ let previewWin = null
 let previewWatcher = null
 let previewWatcherRoot = null
 let previewReloadTimer = null
+
+const lspManager = new LspManager()
 
 async function createWindow() {
   mainWin = new BrowserWindow({
@@ -136,6 +139,7 @@ app.whenReady().then(() => {
   registerExtensionHandlers()
   registerLiveServerHandlers()
   registerPreviewWindowHandlers()
+  registerLspHandlers()
 })
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
@@ -566,6 +570,37 @@ ipcMain.handle('fs:rename',     async (_, o, n) => { fs.renameSync(o, n); return
 ipcMain.handle('fs:createFile', async (_, p) => { fs.writeFileSync(p, '', 'utf-8'); return true })
 ipcMain.handle('fs:createDir',  async (_, p) => { fs.mkdirSync(p, { recursive: true }); return true })
 ipcMain.handle('shell:open',    async (_, p) => shell.openPath(p))
+
+// ── LSP (Language Server Protocol) ───────────────────────────────────────────
+function registerLspHandlers() {
+  ipcMain.handle('lsp:start', async (_, { languageId } = {}) => {
+    return await lspManager.start(languageId)
+  })
+
+  ipcMain.handle('lsp:didOpen', async (_, payload = {}) => {
+    return await lspManager.didOpen(payload)
+  })
+
+  ipcMain.handle('lsp:didChange', async (_, payload = {}) => {
+    return await lspManager.didChange(payload)
+  })
+
+  ipcMain.handle('lsp:didClose', async (_, payload = {}) => {
+    return await lspManager.didClose(payload)
+  })
+
+  ipcMain.handle('lsp:completion', async (_, payload = {}) => {
+    return await lspManager.completion(payload)
+  })
+
+  ipcMain.handle('lsp:hover', async (_, payload = {}) => {
+    return await lspManager.hover(payload)
+  })
+
+  ipcMain.handle('lsp:definition', async (_, payload = {}) => {
+    return await lspManager.definition(payload)
+  })
+}
 
 // ── AI: streaming via Ollama ──────────────────────────────────────────────────
 ipcMain.handle('ai:models', async () => {
@@ -1168,10 +1203,20 @@ function getHistoryPath(filePath) {
   return path.join(HISTORY_DIR, `${hash}.json`)
 }
 
-ipcMain.handle('history:save', async (_, { filePath, history }) => {
+ipcMain.handle('history:save', async (_, payloadOrFilePath, maybeHistory) => {
   try {
+    const filePath = typeof payloadOrFilePath === 'string'
+      ? payloadOrFilePath
+      : payloadOrFilePath?.filePath
+    const history = typeof payloadOrFilePath === 'string'
+      ? maybeHistory
+      : payloadOrFilePath?.history
+
+    if (!filePath || typeof history === 'undefined') return false
     const p = getHistoryPath(filePath)
-    fs.writeFileSync(p, JSON.stringify(history, null, 2))
+    const serialized = JSON.stringify(history ?? { stack: [], index: -1 }, null, 2)
+    if (typeof serialized !== 'string') return false
+    fs.writeFileSync(p, serialized, 'utf-8')
     return true
   } catch (e) {
     console.error('[History] Failed to save:', e)
@@ -1309,6 +1354,7 @@ function registerPreviewWindowHandlers() {
 
   // Integración con el watcher de archivos del proyecto
   ipcMain.on('project:root-changed', (_, rootPath) => {
+    lspManager.setWorkspaceRoot(rootPath)
     if (rootPath) startPreviewWatcher(rootPath)
     else stopPreviewWatcher()
   })
