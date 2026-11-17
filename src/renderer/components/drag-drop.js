@@ -201,6 +201,7 @@ export class DragAndDropManager {
         if (stat.isDirectory) {
           if (confirm(`¿Abrir carpeta ${fileName} como proyecto base de NVCode?`)) {
             this.state.currentFolder = filePath;
+            this.state.emit('projectFolderChanged', filePath);
             this.state.emit('refreshTree');
           }
         } else {
