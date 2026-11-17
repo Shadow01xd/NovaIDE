@@ -4,7 +4,14 @@ const path = require('path')
 const fs   = require('fs')
 const os   = require('os')
 const { applyUnifiedDiff } = require('./tools/apply-diff')
-const { isCommandAllowed } = require('./security/command-whitelist')
+const { getCommandRejection } = require('./security/command-whitelist')
+const workspaceGuard = require('./security/workspace-guard')
+
+// Rejects an agent operation whose paths fall outside the open project.
+function guard(paths, opts) {
+  const error = workspaceGuard.checkPaths(paths, opts)
+  return error ? { success: false, error } : null
+}
 const { LspManager } = require('./lsp/lsp-manager')
 
 const VITE_DEV_URL = 'http://localhost:5173'
@@ -569,7 +576,20 @@ ipcMain.handle('fs:deleteFile', async (_, p) => {
 ipcMain.handle('fs:rename',     async (_, o, n) => { fs.renameSync(o, n); return true })
 ipcMain.handle('fs:createFile', async (_, p) => { fs.writeFileSync(p, '', 'utf-8'); return true })
 ipcMain.handle('fs:createDir',  async (_, p) => { fs.mkdirSync(p, { recursive: true }); return true })
-ipcMain.handle('shell:open',    async (_, p) => shell.openPath(p))
+// Only web links are opened; local paths are revealed in the file explorer
+// instead of opened, so a .exe/.bat path can never be launched from here.
+ipcMain.handle('shell:open', async (_, p) => {
+  if (typeof p !== 'string' || !p) return 'Ruta vacía'
+  if (/^https?:\/\//i.test(p)) {
+    await shell.openExternal(p)
+    return ''
+  }
+  if (fs.existsSync(p)) {
+    shell.showItemInFolder(p)
+    return ''
+  }
+  return 'Ruta no encontrada'
+})
 
 // ── LSP (Language Server Protocol) ───────────────────────────────────────────
 function registerLspHandlers() {
@@ -695,6 +715,8 @@ ipcMain.handle('path:dirname', (_, p) => path.dirname(p))
 ipcMain.handle('path:basename', (_, p) => path.basename(p))
 
 ipcMain.handle('agent:readFile', async (_, p, { startLine, endLine } = {}) => {
+  const blocked = guard([p])
+  if (blocked) return blocked
   try {
     let content = fs.readFileSync(p, 'utf-8')
     if (typeof startLine === 'number' || typeof endLine === 'number') {
@@ -711,6 +733,8 @@ ipcMain.handle('agent:readFile', async (_, p, { startLine, endLine } = {}) => {
 })
 
 ipcMain.handle('agent:writeFile', async (_, p, c) => {
+  const blocked = guard([p], { write: true })
+  if (blocked) return blocked
   try {
     fs.mkdirSync(path.dirname(p), { recursive: true })
     fs.writeFileSync(p, c, 'utf-8')
@@ -721,6 +745,8 @@ ipcMain.handle('agent:writeFile', async (_, p, c) => {
 })
 
 ipcMain.handle('agent:createFile', async (_, p, c = '') => {
+  const blocked = guard([p], { write: true })
+  if (blocked) return blocked
   try {
     fs.mkdirSync(path.dirname(p), { recursive: true })
     fs.writeFileSync(p, c, 'utf-8')
@@ -731,6 +757,8 @@ ipcMain.handle('agent:createFile', async (_, p, c = '') => {
 })
 
 ipcMain.handle('agent:deleteFile', async (_, p) => {
+  const blocked = guard([p], { write: true })
+  if (blocked) return blocked
   try {
     const stat = fs.statSync(p)
     if (stat.isDirectory()) {
@@ -745,6 +773,11 @@ ipcMain.handle('agent:deleteFile', async (_, p) => {
 })
 
 ipcMain.handle('agent:deleteDirectory', async (_, p) => {
+  const blocked = guard([p], { write: true })
+  if (blocked) return blocked
+  if (workspaceGuard.isWorkspaceRoot(p)) {
+    return { success: false, error: 'El agente no puede borrar la carpeta raíz del proyecto.' }
+  }
   try {
     const stat = fs.statSync(p)
     if (!stat.isDirectory()) {
@@ -758,6 +791,8 @@ ipcMain.handle('agent:deleteDirectory', async (_, p) => {
 })
 
 ipcMain.handle('agent:listFiles', async (_, p) => {
+  const blocked = guard([p])
+  if (blocked) return blocked
   try {
     const entries = fs.readdirSync(p, { withFileTypes: true })
     return {
@@ -777,6 +812,8 @@ ipcMain.handle('agent:listFiles', async (_, p) => {
 })
 
 ipcMain.handle('agent:searchInFiles', async (_, query, dir) => {
+  const blocked = guard([dir])
+  if (blocked) return blocked
   const results = []
   function searchRecursive(currentDir) {
     try {
@@ -810,6 +847,8 @@ ipcMain.handle('agent:searchInFiles', async (_, query, dir) => {
 })
 
 ipcMain.handle('agent:createDir', async (_, p) => {
+  const blocked = guard([p], { write: true })
+  if (blocked) return blocked
   try {
     fs.mkdirSync(p, { recursive: true })
     return { success: true }
@@ -821,6 +860,8 @@ ipcMain.handle('agent:createDir', async (_, p) => {
 // Snapshot recursivo de un directorio — usado por el sistema de checkpoints
 // Devuelve todos los archivos con su contenido para poder restaurarlos
 ipcMain.handle('agent:readDirRecursive', async (_, dirPath) => {
+  const blocked = guard([dirPath])
+  if (blocked) return blocked
   const entries = []
   const SKIP = new Set(['node_modules', '.git', 'dist', 'build', '.next', '__pycache__'])
   const MAX_SIZE = 2 * 1024 * 1024 // 2 MB por archivo
@@ -858,6 +899,8 @@ ipcMain.handle('agent:readDirRecursive', async (_, dirPath) => {
 })
 
 ipcMain.handle('agent:moveFile', async (_, src, dest) => {
+  const blocked = guard([src, dest], { write: true })
+  if (blocked) return blocked
   try {
     const destDir = path.dirname(dest)
     if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true })
@@ -869,14 +912,16 @@ ipcMain.handle('agent:moveFile', async (_, src, dest) => {
 })
 
 ipcMain.handle('agent:runCommand', async (_, command, cwd) => {
-  if (!isCommandAllowed(command)) {
-    return { success: false, error: `Comando no permitido: ${command.split(' ')[0]}. Por seguridad, solo se permiten comandos básicos de desarrollo.`, exitCode: 1 };
+  const rejection = getCommandRejection(command)
+  if (rejection) {
+    return { success: false, error: rejection, exitCode: 1 };
   }
+  const rootDir = cwd || workspaceGuard.getWorkspaceRoot()
+  const blocked = guard([rootDir])
+  if (blocked) return { ...blocked, exitCode: 1 }
 
   return new Promise((resolve) => {
     const { exec } = require('child_process')
-    // Usamos cwd de forma segura
-    const rootDir = cwd || os.homedir();
     exec(command, { cwd: rootDir, timeout: 60000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout, stderr) => {
       resolve({
         success: !err,
@@ -893,8 +938,13 @@ ipcMain.handle('agent:runCommand', async (_, command, cwd) => {
 const _runningServers = new Map()
 
 ipcMain.handle('agent:runCommandLive', (event, command, cwd, reqId) => {
-  if (!isCommandAllowed(command)) {
-    return { success: false, stdout: '', stderr: `Comando no permitido: ${command.split(' ')[0]}`, exitCode: 1 };
+  const rejection = getCommandRejection(command)
+  if (rejection) {
+    return { success: false, stdout: '', stderr: rejection, exitCode: 1 };
+  }
+  const blockedCwd = workspaceGuard.checkPaths([cwd || workspaceGuard.getWorkspaceRoot()])
+  if (blockedCwd) {
+    return { success: false, stdout: '', stderr: blockedCwd, exitCode: 1 };
   }
 
   // Detect long-running dev server commands
@@ -902,7 +952,7 @@ ipcMain.handle('agent:runCommandLive', (event, command, cwd, reqId) => {
 
   return new Promise((resolve) => {
     const { spawn } = require('child_process')
-    const rootDir = cwd || os.homedir()
+    const rootDir = cwd || workspaceGuard.getWorkspaceRoot()
     const proc = spawn(command, [], { cwd: rootDir, shell: true })
     let stdout = '', stderr = '', settled = false, detectedPort = null
 
@@ -959,6 +1009,8 @@ ipcMain.handle('agent:killServer', (_, reqId) => {
 })
 
 ipcMain.handle('agent:getProjectStructure', async (_, rootPath, maxDepth = 4) => {
+  const blocked = guard([rootPath])
+  if (blocked) return blocked
   function buildTree(dir, depth) {
     if (depth > maxDepth) return []
     try {
@@ -975,10 +1027,14 @@ ipcMain.handle('agent:getProjectStructure', async (_, rootPath, maxDepth = 4) =>
 })
 
 ipcMain.handle('agent:applyDiff', async (_, p, diffText) => {
+  const blocked = guard([p], { write: true })
+  if (blocked) return blocked
   return applyUnifiedDiff(p, diffText)
 })
 
 ipcMain.handle('agent:searchReplace', async (_, filePath, search, replace) => {
+  const blocked = guard([filePath], { write: true })
+  if (blocked) return blocked
   try {
     if (!fs.existsSync(filePath)) return { success: false, error: `File not found: ${filePath}` }
     const content = fs.readFileSync(filePath, 'utf-8')
@@ -1239,7 +1295,8 @@ ipcMain.handle('history:get', async (_, filePath) => {
 
 ipcMain.handle('shell:openExternal', async (_, url) => {
   const { shell } = require('electron')
-  shell.openExternal(url)
+  // openExternal with file:// or custom schemes can launch local programs.
+  if (typeof url === 'string' && /^https?:\/\//i.test(url)) shell.openExternal(url)
 })
 
 // ── Live Server ──────────────────────────────────────────────────────────────
@@ -1354,6 +1411,7 @@ function registerPreviewWindowHandlers() {
 
   // Integración con el watcher de archivos del proyecto
   ipcMain.on('project:root-changed', (_, rootPath) => {
+    workspaceGuard.setWorkspaceRoot(rootPath)
     lspManager.setWorkspaceRoot(rootPath)
     if (rootPath) startPreviewWatcher(rootPath)
     else stopPreviewWatcher()

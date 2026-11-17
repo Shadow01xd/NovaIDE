@@ -289,6 +289,12 @@ state.on('editorClear', () => {
   }
 })
 
+// The main process limits the AI agent to the open project, so it must learn
+// about every folder change, wherever it comes from (menu, sidebar, drag & drop).
+state.on('projectFolderChanged', (folder) => {
+  if (folder) window.api.sendProjectRoot(folder)
+})
+
 document.getElementById('wb-open')?.addEventListener('click', async () => {
   const folder = await window.api.openFolder()
   if (folder) {
@@ -317,7 +323,6 @@ window.api.onMenu(async (event) => {
         state.currentFolder = folder; 
         state.emit('projectFolderChanged', folder);
         state.emit('refreshTree');
-        window.api.sendProjectRoot(folder);
       }
       break
     }
